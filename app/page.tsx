@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 type AppointmentStatus =
   | "Confirmada"
@@ -21,6 +21,25 @@ type Appointment = {
   notes?: string;
 };
 
+type Client = {
+  id: number;
+  name: string;
+  phone: string;
+  email?: string;
+  visits: number;
+  lastService: string;
+  registeredAt: string;
+};
+
+type Service = {
+  id: number;
+  name: string;
+  description: string;
+  duration: number;
+  price: number;
+  active: boolean;
+};
+
 const Icon = {
   Grid: () => <span>▦</span>,
   Calendar: () => <span>◫</span>,
@@ -33,8 +52,10 @@ const Icon = {
   ArrowLeft: () => <span>‹</span>,
   ArrowRight: () => <span>›</span>,
   Close: () => <span>×</span>,
-  Clock: () => <span>◷</span>,
   Phone: () => <span>☎</span>,
+  Search: () => <span>⌕</span>,
+  Edit: () => <span>✎</span>,
+  Trash: () => <span>⌫</span>,
 };
 
 const initialAppointments: Appointment[] = [
@@ -80,12 +101,86 @@ const initialAppointments: Appointment[] = [
   },
 ];
 
-const services = [
-  "Corte Clásico",
-  "Corte Premium",
-  "Corte + Barba",
-  "Barba Premium",
-  "Experiencia G13",
+const initialClients: Client[] = [
+  {
+    id: 1,
+    name: "Carlos Rodríguez",
+    phone: "+57 300 000 0001",
+    email: "",
+    visits: 8,
+    lastService: "Corte Premium",
+    registeredAt: "15 ago 2026",
+  },
+  {
+    id: 2,
+    name: "Juan Martínez",
+    phone: "+57 300 000 0002",
+    email: "",
+    visits: 5,
+    lastService: "Corte + Barba",
+    registeredAt: "02 ago 2026",
+  },
+  {
+    id: 3,
+    name: "Andrés Gómez",
+    phone: "+57 300 000 0003",
+    email: "",
+    visits: 3,
+    lastService: "Experiencia G13",
+    registeredAt: "28 ago 2026",
+  },
+  {
+    id: 4,
+    name: "Miguel Torres",
+    phone: "+57 300 000 0004",
+    email: "",
+    visits: 12,
+    lastService: "Corte Premium",
+    registeredAt: "10 jul 2026",
+  },
+];
+
+const initialServices: Service[] = [
+  {
+    id: 1,
+    name: "Corte Clásico",
+    description: "Corte profesional con acabado limpio y preciso.",
+    duration: 30,
+    price: 25000,
+    active: true,
+  },
+  {
+    id: 2,
+    name: "Corte Premium",
+    description: "Experiencia completa con asesoría y acabado profesional.",
+    duration: 45,
+    price: 35000,
+    active: true,
+  },
+  {
+    id: 3,
+    name: "Corte + Barba",
+    description: "Servicio integral de corte y diseño de barba.",
+    duration: 60,
+    price: 50000,
+    active: true,
+  },
+  {
+    id: 4,
+    name: "Barba Premium",
+    description: "Perfilado, diseño y acabado profesional de barba.",
+    duration: 30,
+    price: 25000,
+    active: true,
+  },
+  {
+    id: 5,
+    name: "Experiencia G13",
+    description: "Servicio premium completo BARBER G13.",
+    duration: 60,
+    price: 60000,
+    active: true,
+  },
 ];
 
 const hours = [
@@ -106,14 +201,35 @@ const hours = [
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [active, setActive] = useState("Dashboard");
+
   const [appointments, setAppointments] =
     useState<Appointment[]>(initialAppointments);
 
-  const [showModal, setShowModal] = useState(false);
+  const [clients, setClients] =
+    useState<Client[]>(initialClients);
 
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [services, setServices] =
+    useState<Service[]>(initialServices);
 
-  const [formData, setFormData] = useState({
+  const [showAppointmentModal, setShowAppointmentModal] =
+    useState(false);
+
+  const [showClientModal, setShowClientModal] =
+    useState(false);
+
+  const [showServiceModal, setShowServiceModal] =
+    useState(false);
+
+  const [editingService, setEditingService] =
+    useState<Service | null>(null);
+
+  const [clientSearch, setClientSearch] = useState("");
+  const [serviceSearch, setServiceSearch] = useState("");
+
+  const [selectedDate, setSelectedDate] =
+    useState(new Date());
+
+  const [appointmentForm, setAppointmentForm] = useState({
     name: "",
     phone: "",
     service: "Corte Clásico",
@@ -121,6 +237,19 @@ export default function Home() {
     time: "09:00",
     duration: "45",
     notes: "",
+  });
+
+  const [clientForm, setClientForm] = useState({
+    name: "",
+    phone: "",
+    email: "",
+  });
+
+  const [serviceForm, setServiceForm] = useState({
+    name: "",
+    description: "",
+    duration: "30",
+    price: "",
   });
 
   const menu = [
@@ -131,19 +260,47 @@ export default function Home() {
     { name: "Finanzas", icon: <Icon.Wallet /> },
   ];
 
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString("es-CO", {
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency: "COP",
+      maximumFractionDigits: 0,
+    }).format(value);
+
+  const formatDate = (date: Date) =>
+    date.toLocaleDateString("es-CO", {
       weekday: "long",
       day: "numeric",
       month: "long",
       year: "numeric",
     });
-  };
+
+  const getInitials = (name: string) =>
+    name
+      .split(" ")
+      .slice(0, 2)
+      .map((word) => word[0])
+      .join("")
+      .toUpperCase();
 
   const changeDay = (days: number) => {
-    const newDate = new Date(selectedDate);
-    newDate.setDate(selectedDate.getDate() + days);
-    setSelectedDate(newDate);
+    const next = new Date(selectedDate);
+    next.setDate(next.getDate() + days);
+    setSelectedDate(next);
+  };
+
+  const openAppointmentModal = (
+    time?: string,
+    client?: Client
+  ) => {
+    setAppointmentForm((current) => ({
+      ...current,
+      time: time || current.time,
+      name: client?.name || current.name,
+      phone: client?.phone || current.phone,
+    }));
+
+    setShowAppointmentModal(true);
   };
 
   const handleCreateAppointment = (
@@ -151,21 +308,27 @@ export default function Home() {
   ) => {
     event.preventDefault();
 
-    if (!formData.name.trim()) {
-      alert("Por favor ingresa el nombre del cliente.");
+    if (!appointmentForm.name.trim()) {
+      alert("Ingresa el nombre del cliente.");
       return;
     }
 
+    const selectedService = services.find(
+      (service) =>
+        service.name === appointmentForm.service
+    );
+
     const newAppointment: Appointment = {
       id: Date.now(),
-      time: formData.time,
-      name: formData.name,
-      phone: formData.phone,
-      service: formData.service,
-      barber: formData.barber,
-      duration: Number(formData.duration),
+      time: appointmentForm.time,
+      name: appointmentForm.name,
+      phone: appointmentForm.phone,
+      service: appointmentForm.service,
+      barber: appointmentForm.barber,
+      duration: selectedService?.duration ||
+        Number(appointmentForm.duration),
       status: "Confirmada",
-      notes: formData.notes,
+      notes: appointmentForm.notes,
     };
 
     setAppointments((current) =>
@@ -174,17 +337,157 @@ export default function Home() {
       )
     );
 
-    setShowModal(false);
+    const existingClient = clients.find(
+      (client) =>
+        client.phone === appointmentForm.phone ||
+        client.name.toLowerCase() ===
+          appointmentForm.name.toLowerCase()
+    );
 
-    setFormData({
+    if (!existingClient) {
+      setClients((current) => [
+        {
+          id: Date.now() + 1,
+          name: appointmentForm.name,
+          phone: appointmentForm.phone,
+          visits: 1,
+          lastService: appointmentForm.service,
+          registeredAt: "Hoy",
+        },
+        ...current,
+      ]);
+    }
+
+    setShowAppointmentModal(false);
+
+    setAppointmentForm({
       name: "",
       phone: "",
-      service: "Corte Clásico",
+      service: services[0]?.name || "",
       barber: "Barbero G13",
       time: "09:00",
       duration: "45",
       notes: "",
     });
+  };
+
+  const handleCreateClient = (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
+
+    if (!clientForm.name.trim() || !clientForm.phone.trim()) {
+      alert("Nombre y teléfono son obligatorios.");
+      return;
+    }
+
+    setClients((current) => [
+      {
+        id: Date.now(),
+        name: clientForm.name,
+        phone: clientForm.phone,
+        email: clientForm.email,
+        visits: 0,
+        lastService: "Sin servicios registrados",
+        registeredAt: "Hoy",
+      },
+      ...current,
+    ]);
+
+    setClientForm({
+      name: "",
+      phone: "",
+      email: "",
+    });
+
+    setShowClientModal(false);
+  };
+
+  const handleSaveService = (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
+
+    if (
+      !serviceForm.name.trim() ||
+      !serviceForm.price
+    ) {
+      alert("Completa el nombre y precio.");
+      return;
+    }
+
+    if (editingService) {
+      setServices((current) =>
+        current.map((service) =>
+          service.id === editingService.id
+            ? {
+                ...service,
+                name: serviceForm.name,
+                description: serviceForm.description,
+                duration: Number(serviceForm.duration),
+                price: Number(serviceForm.price),
+              }
+            : service
+        )
+      );
+    } else {
+      setServices((current) => [
+        ...current,
+        {
+          id: Date.now(),
+          name: serviceForm.name,
+          description: serviceForm.description,
+          duration: Number(serviceForm.duration),
+          price: Number(serviceForm.price),
+          active: true,
+        },
+      ]);
+    }
+
+    setShowServiceModal(false);
+    setEditingService(null);
+
+    setServiceForm({
+      name: "",
+      description: "",
+      duration: "30",
+      price: "",
+    });
+  };
+
+  const openEditService = (service: Service) => {
+    setEditingService(service);
+
+    setServiceForm({
+      name: service.name,
+      description: service.description,
+      duration: String(service.duration),
+      price: String(service.price),
+    });
+
+    setShowServiceModal(true);
+  };
+
+  const toggleService = (id: number) => {
+    setServices((current) =>
+      current.map((service) =>
+        service.id === id
+          ? { ...service, active: !service.active }
+          : service
+      )
+    );
+  };
+
+  const deleteService = (id: number) => {
+    const confirmDelete = window.confirm(
+      "¿Deseas eliminar este servicio?"
+    );
+
+    if (!confirmDelete) return;
+
+    setServices((current) =>
+      current.filter((service) => service.id !== id)
+    );
   };
 
   const updateStatus = (
@@ -200,11 +503,33 @@ export default function Home() {
     );
   };
 
-  const getAppointmentsByHour = (hour: string) => {
-    return appointments.filter((appointment) =>
+  const filteredClients = useMemo(
+    () =>
+      clients.filter((client) => {
+        const search = clientSearch.toLowerCase();
+
+        return (
+          client.name.toLowerCase().includes(search) ||
+          client.phone.toLowerCase().includes(search)
+        );
+      }),
+    [clients, clientSearch]
+  );
+
+  const filteredServices = useMemo(
+    () =>
+      services.filter((service) =>
+        service.name
+          .toLowerCase()
+          .includes(serviceSearch.toLowerCase())
+      ),
+    [services, serviceSearch]
+  );
+
+  const getAppointmentsByHour = (hour: string) =>
+    appointments.filter((appointment) =>
       appointment.time.startsWith(hour)
     );
-  };
 
   const renderDashboard = () => (
     <>
@@ -225,7 +550,7 @@ export default function Home() {
           className="primary-button"
           onClick={() => {
             setActive("Agenda");
-            setShowModal(true);
+            setShowAppointmentModal(true);
           }}
         >
           <Icon.Plus />
@@ -239,12 +564,8 @@ export default function Home() {
             <span>CITAS DE HOY</span>
             <Icon.Calendar />
           </div>
-
           <h2>{appointments.length}</h2>
-
-          <p>
-            <strong>Agenda activa</strong>
-          </p>
+          <p><strong>Agenda activa</strong></p>
         </article>
 
         <article className="stat-card">
@@ -252,12 +573,8 @@ export default function Home() {
             <span>INGRESOS HOY</span>
             <Icon.Wallet />
           </div>
-
           <h2>$285K</h2>
-
-          <p>
-            <strong>+18%</strong> vs. ayer
-          </p>
+          <p><strong>+18%</strong> vs. ayer</p>
         </article>
 
         <article className="stat-card">
@@ -265,23 +582,19 @@ export default function Home() {
             <span>CLIENTES</span>
             <Icon.Users />
           </div>
-
-          <h2>248</h2>
-
-          <p>
-            <strong>+12</strong> este mes
-          </p>
+          <h2>{clients.length}</h2>
+          <p><strong>Base de clientes</strong></p>
         </article>
 
         <article className="stat-card gold-card">
           <div className="stat-header">
-            <span>OCUPACIÓN</span>
+            <span>SERVICIOS</span>
             <Icon.Scissors />
           </div>
-
-          <h2>78%</h2>
-
-          <p>Disponibilidad saludable</p>
+          <h2>
+            {services.filter((service) => service.active).length}
+          </h2>
+          <p>Servicios activos</p>
         </article>
       </section>
 
@@ -303,20 +616,13 @@ export default function Home() {
 
           <div className="appointments">
             {appointments.slice(0, 4).map((appointment) => (
-              <div
-                className="appointment"
-                key={appointment.id}
-              >
+              <div className="appointment" key={appointment.id}>
                 <div className="appointment-time">
                   {appointment.time}
                 </div>
 
                 <div className="client-avatar">
-                  {appointment.name
-                    .split(" ")
-                    .slice(0, 2)
-                    .map((word) => word[0])
-                    .join("")}
+                  {getInitials(appointment.name)}
                 </div>
 
                 <div className="client-details">
@@ -349,19 +655,13 @@ export default function Home() {
           <div className="chart">
             {[42, 65, 48, 82, 58, 91, 74].map(
               (height, index) => (
-                <div
-                  className="chart-column"
-                  key={index}
-                >
+                <div className="chart-column" key={index}>
                   <div
                     className="chart-bar"
                     style={{ height: `${height}%` }}
                   />
-
                   <span>
-                    {["L", "M", "X", "J", "V", "S", "D"][
-                      index
-                    ]}
+                    {["L", "M", "X", "J", "V", "S", "D"][index]}
                   </span>
                 </div>
               )
@@ -374,30 +674,6 @@ export default function Home() {
           </div>
         </article>
       </section>
-
-      <section className="quick-section">
-        <p className="section-label">ACCESOS RÁPIDOS</p>
-
-        <div className="quick-grid">
-          <button onClick={() => setActive("Agenda")}>
-            <Icon.Calendar />
-            <span>Ver agenda completa</span>
-            →
-          </button>
-
-          <button onClick={() => setActive("Clientes")}>
-            <Icon.Users />
-            <span>Registrar cliente</span>
-            →
-          </button>
-
-          <button onClick={() => setActive("Servicios")}>
-            <Icon.Scissors />
-            <span>Gestionar servicios</span>
-            →
-          </button>
-        </div>
-      </section>
     </>
   );
 
@@ -406,11 +682,7 @@ export default function Home() {
       <div className="agenda-heading">
         <div>
           <p className="section-label">GESTIÓN DE RESERVAS</p>
-
-          <h1>
-            Agenda <em>Profesional</em>
-          </h1>
-
+          <h1>Agenda <em>Profesional</em></h1>
           <p className="welcome-text">
             Administra las citas y disponibilidad de BARBER G13.
           </p>
@@ -418,7 +690,7 @@ export default function Home() {
 
         <button
           className="primary-button"
-          onClick={() => setShowModal(true)}
+          onClick={() => setShowAppointmentModal(true)}
         >
           <Icon.Plus />
           Nueva reserva
@@ -454,31 +726,22 @@ export default function Home() {
           <span>RESERVAS</span>
           <strong>{appointments.length}</strong>
         </div>
-
         <div>
           <span>CONFIRMADAS</span>
           <strong>
-            {
-              appointments.filter(
-                (appointment) =>
-                  appointment.status === "Confirmada"
-              ).length
-            }
+            {appointments.filter(
+              (item) => item.status === "Confirmada"
+            ).length}
           </strong>
         </div>
-
         <div>
           <span>PENDIENTES</span>
           <strong>
-            {
-              appointments.filter(
-                (appointment) =>
-                  appointment.status === "Pendiente"
-              ).length
-            }
+            {appointments.filter(
+              (item) => item.status === "Pendiente"
+            ).length}
           </strong>
         </div>
-
         <div>
           <span>DISPONIBILIDAD</span>
           <strong className="gold-text">Disponible</strong>
@@ -497,24 +760,14 @@ export default function Home() {
               getAppointmentsByHour(hour);
 
             return (
-              <div
-                className="timeline-row"
-                key={hour}
-              >
+              <div className="timeline-row" key={hour}>
                 <div className="timeline-time">{hour}</div>
 
                 <div className="timeline-content">
                   {hourAppointments.length === 0 ? (
                     <button
                       className="available-slot"
-                      onClick={() => {
-                        setFormData((current) => ({
-                          ...current,
-                          time: hour,
-                        }));
-
-                        setShowModal(true);
-                      }}
+                      onClick={() => openAppointmentModal(hour)}
                     >
                       + Horario disponible
                     </button>
@@ -525,21 +778,14 @@ export default function Home() {
                         key={appointment.id}
                       >
                         <div className="agenda-client-avatar">
-                          {appointment.name
-                            .split(" ")
-                            .slice(0, 2)
-                            .map((word) => word[0])
-                            .join("")}
+                          {getInitials(appointment.name)}
                         </div>
 
                         <div className="agenda-client-info">
                           <strong>{appointment.name}</strong>
-
                           <span>
-                            {appointment.service} ·{" "}
-                            {appointment.duration} min
+                            {appointment.service} · {appointment.duration} min
                           </span>
-
                           <small>
                             <Icon.Phone /> {appointment.phone}
                           </small>
@@ -576,7 +822,6 @@ export default function Home() {
         <aside className="agenda-sidebar">
           <article className="panel">
             <p className="section-label">RESUMEN DEL DÍA</p>
-
             <h2>Tu jornada</h2>
 
             <div className="day-progress">
@@ -590,63 +835,223 @@ export default function Home() {
                   <strong>{appointments.length}</strong>
                   citas programadas
                 </p>
-
                 <p>
-                  <strong>4</strong>
+                  <strong>{hours.length - appointments.length}</strong>
                   espacios disponibles
                 </p>
               </div>
             </div>
-          </article>
-
-          <article className="panel next-appointment">
-            <p className="section-label">PRÓXIMA CITA</p>
-
-            {appointments.length > 0 ? (
-              <>
-                <div className="next-time">
-                  {appointments[0].time}
-                </div>
-
-                <h3>{appointments[0].name}</h3>
-
-                <p>{appointments[0].service}</p>
-
-                <button
-                  className="secondary-button"
-                  onClick={() =>
-                    updateStatus(
-                      appointments[0].id,
-                      "En proceso"
-                    )
-                  }
-                >
-                  Iniciar servicio
-                </button>
-              </>
-            ) : (
-              <p className="empty-text">
-                No hay citas programadas.
-              </p>
-            )}
           </article>
         </aside>
       </div>
     </section>
   );
 
+  const renderClients = () => (
+    <section className="module-page">
+      <div className="module-heading">
+        <div>
+          <p className="section-label">BASE DE DATOS LOCAL</p>
+          <h1>Clientes <em>G13</em></h1>
+          <p className="welcome-text">
+            Gestiona y consulta la información de tus clientes.
+          </p>
+        </div>
+
+        <button
+          className="primary-button"
+          onClick={() => setShowClientModal(true)}
+        >
+          <Icon.Plus />
+          Nuevo cliente
+        </button>
+      </div>
+
+      <div className="module-stats">
+        <div className="mini-stat">
+          <span>CLIENTES REGISTRADOS</span>
+          <strong>{clients.length}</strong>
+        </div>
+
+        <div className="mini-stat">
+          <span>CLIENTES FRECUENTES</span>
+          <strong>
+            {clients.filter((client) => client.visits >= 5).length}
+          </strong>
+        </div>
+
+        <div className="mini-stat">
+          <span>NUEVOS</span>
+          <strong>
+            {clients.filter(
+              (client) => client.registeredAt === "Hoy"
+            ).length}
+          </strong>
+        </div>
+      </div>
+
+      <div className="search-bar">
+        <Icon.Search />
+        <input
+          type="text"
+          placeholder="Buscar por nombre o teléfono..."
+          value={clientSearch}
+          onChange={(event) =>
+            setClientSearch(event.target.value)
+          }
+        />
+      </div>
+
+      <div className="clients-list">
+        {filteredClients.length === 0 ? (
+          <div className="empty-state">
+            <Icon.Users />
+            <h3>No encontramos clientes</h3>
+            <p>Prueba con otra búsqueda o registra un nuevo cliente.</p>
+          </div>
+        ) : (
+          filteredClients.map((client) => (
+            <article className="client-card" key={client.id}>
+              <div className="large-avatar">
+                {getInitials(client.name)}
+              </div>
+
+              <div className="client-main">
+                <h3>{client.name}</h3>
+                <span>{client.phone}</span>
+                {client.email && <small>{client.email}</small>}
+              </div>
+
+              <div className="client-metric">
+                <span>VISITAS</span>
+                <strong>{client.visits}</strong>
+              </div>
+
+              <div className="client-service">
+                <span>ÚLTIMO SERVICIO</span>
+                <strong>{client.lastService}</strong>
+              </div>
+
+              <button
+                className="client-action"
+                onClick={() => {
+                  setActive("Agenda");
+                  openAppointmentModal(undefined, client);
+                }}
+              >
+                <Icon.Calendar />
+                Nueva cita
+              </button>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+
+  const renderServices = () => (
+    <section className="module-page">
+      <div className="module-heading">
+        <div>
+          <p className="section-label">CATÁLOGO COMERCIAL</p>
+          <h1>Servicios <em>G13</em></h1>
+          <p className="welcome-text">
+            Configura los servicios disponibles en tu barbería.
+          </p>
+        </div>
+
+        <button
+          className="primary-button"
+          onClick={() => {
+            setEditingService(null);
+            setServiceForm({
+              name: "",
+              description: "",
+              duration: "30",
+              price: "",
+            });
+            setShowServiceModal(true);
+          }}
+        >
+          <Icon.Plus />
+          Nuevo servicio
+        </button>
+      </div>
+
+      <div className="search-bar">
+        <Icon.Search />
+        <input
+          type="text"
+          placeholder="Buscar servicio..."
+          value={serviceSearch}
+          onChange={(event) =>
+            setServiceSearch(event.target.value)
+          }
+        />
+      </div>
+
+      <div className="services-grid">
+        {filteredServices.map((service) => (
+          <article
+            className={`service-card ${
+              !service.active ? "service-inactive" : ""
+            }`}
+            key={service.id}
+          >
+            <div className="service-top">
+              <div className="service-icon">
+                <Icon.Scissors />
+              </div>
+
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={service.active}
+                  onChange={() => toggleService(service.id)}
+                />
+                <span />
+              </label>
+            </div>
+
+            <h3>{service.name}</h3>
+            <p>{service.description}</p>
+
+            <div className="service-details">
+              <div>
+                <span>DURACIÓN</span>
+                <strong>{service.duration} min</strong>
+              </div>
+
+              <div>
+                <span>PRECIO</span>
+                <strong>{formatCurrency(service.price)}</strong>
+              </div>
+            </div>
+
+            <div className="service-actions">
+              <button onClick={() => openEditService(service)}>
+                <Icon.Edit />
+                Editar
+              </button>
+
+              <button
+                className="delete-button"
+                onClick={() => deleteService(service.id)}
+              >
+                <Icon.Trash />
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+
   const renderPlaceholder = () => (
     <section className="placeholder-page">
-      <p className="section-label">MÓDULO EN CONSTRUCCIÓN</p>
-
-      <h1>
-        {active} <em>BARBER G13</em>
-      </h1>
-
-      <p>
-        Este módulo será desarrollado en los próximos
-        bloques del sistema.
-      </p>
+      <p className="section-label">PRÓXIMO MÓDULO</p>
+      <h1>{active} <em>BARBER G13</em></h1>
+      <p>Este módulo será desarrollado en el siguiente bloque.</p>
     </section>
   );
 
@@ -659,35 +1064,24 @@ export default function Home() {
         />
       )}
 
-      <aside
-        className={`sidebar ${
-          menuOpen ? "open" : ""
-        }`}
-      >
+      <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
         <div className="brand">
           BARBER <strong>G13</strong>
         </div>
 
-        <p className="brand-subtitle">
-          GESTIÓN PROFESIONAL
-        </p>
+        <p className="brand-subtitle">GESTIÓN PROFESIONAL</p>
 
         <nav className="navigation">
           {menu.map((item) => (
             <button
               key={item.name}
-              className={
-                active === item.name ? "active" : ""
-              }
+              className={active === item.name ? "active" : ""}
               onClick={() => {
                 setActive(item.name);
                 setMenuOpen(false);
               }}
             >
-              <span className="nav-icon">
-                {item.icon}
-              </span>
-
+              <span className="nav-icon">{item.icon}</span>
               {item.name}
             </button>
           ))}
@@ -701,7 +1095,6 @@ export default function Home() {
 
           <div className="profile">
             <div className="profile-avatar">G13</div>
-
             <div>
               <strong>Administrador</strong>
               <small>BARBER G13</small>
@@ -720,8 +1113,7 @@ export default function Home() {
           </button>
 
           <div className="breadcrumb">
-            BARBER G13 <span>/</span>{" "}
-            <strong>{active}</strong>
+            BARBER G13 <span>/</span> <strong>{active}</strong>
           </div>
 
           <div className="top-profile">
@@ -731,29 +1123,29 @@ export default function Home() {
         </header>
 
         {active === "Dashboard" && renderDashboard()}
-
         {active === "Agenda" && renderAgenda()}
+        {active === "Clientes" && renderClients()}
+        {active === "Servicios" && renderServices()}
 
         {active !== "Dashboard" &&
           active !== "Agenda" &&
+          active !== "Clientes" &&
+          active !== "Servicios" &&
           renderPlaceholder()}
       </main>
 
-      {showModal && (
+      {showAppointmentModal && (
         <div className="modal-overlay">
           <div className="reservation-modal">
             <div className="modal-header">
               <div>
-                <p className="section-label">
-                  NUEVA RESERVA
-                </p>
-
+                <p className="section-label">NUEVA RESERVA</p>
                 <h2>Registrar cita</h2>
               </div>
 
               <button
                 className="close-button"
-                onClick={() => setShowModal(false)}
+                onClick={() => setShowAppointmentModal(false)}
               >
                 <Icon.Close />
               </button>
@@ -766,9 +1158,9 @@ export default function Home() {
                   <input
                     type="text"
                     placeholder="Ej: Juan Pérez"
-                    value={formData.name}
+                    value={appointmentForm.name}
                     onChange={(event) =>
-                      setFormData((current) => ({
+                      setAppointmentForm((current) => ({
                         ...current,
                         name: event.target.value,
                       }))
@@ -781,9 +1173,9 @@ export default function Home() {
                   <input
                     type="tel"
                     placeholder="+57 300 0000000"
-                    value={formData.phone}
+                    value={appointmentForm.phone}
                     onChange={(event) =>
-                      setFormData((current) => ({
+                      setAppointmentForm((current) => ({
                         ...current,
                         phone: event.target.value,
                       }))
@@ -794,43 +1186,35 @@ export default function Home() {
                 <label>
                   Servicio
                   <select
-                    value={formData.service}
-                    onChange={(event) =>
-                      setFormData((current) => ({
+                    value={appointmentForm.service}
+                    onChange={(event) => {
+                      const service = services.find(
+                        (item) => item.name === event.target.value
+                      );
+
+                      setAppointmentForm((current) => ({
                         ...current,
                         service: event.target.value,
-                      }))
-                    }
+                        duration: String(service?.duration || 45),
+                      }));
+                    }}
                   >
-                    {services.map((service) => (
-                      <option key={service}>
-                        {service}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label>
-                  Barbero
-                  <select
-                    value={formData.barber}
-                    onChange={(event) =>
-                      setFormData((current) => ({
-                        ...current,
-                        barber: event.target.value,
-                      }))
-                    }
-                  >
-                    <option>Barbero G13</option>
+                    {services
+                      .filter((service) => service.active)
+                      .map((service) => (
+                        <option key={service.id}>
+                          {service.name}
+                        </option>
+                      ))}
                   </select>
                 </label>
 
                 <label>
                   Hora
                   <select
-                    value={formData.time}
+                    value={appointmentForm.time}
                     onChange={(event) =>
-                      setFormData((current) => ({
+                      setAppointmentForm((current) => ({
                         ...current,
                         time: event.target.value,
                       }))
@@ -844,20 +1228,11 @@ export default function Home() {
 
                 <label>
                   Duración
-                  <select
-                    value={formData.duration}
-                    onChange={(event) =>
-                      setFormData((current) => ({
-                        ...current,
-                        duration: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="30">30 minutos</option>
-                    <option value="45">45 minutos</option>
-                    <option value="60">60 minutos</option>
-                    <option value="90">90 minutos</option>
-                  </select>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${appointmentForm.duration} minutos`}
+                  />
                 </label>
 
                 <label className="full-width">
@@ -865,9 +1240,9 @@ export default function Home() {
                   <textarea
                     rows={3}
                     placeholder="Información adicional..."
-                    value={formData.notes}
+                    value={appointmentForm.notes}
                     onChange={(event) =>
-                      setFormData((current) => ({
+                      setAppointmentForm((current) => ({
                         ...current,
                         notes: event.target.value,
                       }))
@@ -880,17 +1255,213 @@ export default function Home() {
                 <button
                   type="button"
                   className="cancel-button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => setShowAppointmentModal(false)}
                 >
                   Cancelar
                 </button>
 
-                <button
-                  type="submit"
-                  className="primary-button"
-                >
+                <button type="submit" className="primary-button">
                   <Icon.Calendar />
                   Confirmar reserva
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showClientModal && (
+        <div className="modal-overlay">
+          <div className="reservation-modal small-modal">
+            <div className="modal-header">
+              <div>
+                <p className="section-label">NUEVO CLIENTE</p>
+                <h2>Registrar cliente</h2>
+              </div>
+
+              <button
+                className="close-button"
+                onClick={() => setShowClientModal(false)}
+              >
+                <Icon.Close />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateClient}>
+              <div className="form-grid">
+                <label className="full-width">
+                  Nombre completo
+                  <input
+                    value={clientForm.name}
+                    onChange={(event) =>
+                      setClientForm((current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }))
+                    }
+                    placeholder="Nombre del cliente"
+                  />
+                </label>
+
+                <label>
+                  Teléfono
+                  <input
+                    value={clientForm.phone}
+                    onChange={(event) =>
+                      setClientForm((current) => ({
+                        ...current,
+                        phone: event.target.value,
+                      }))
+                    }
+                    placeholder="+57..."
+                  />
+                </label>
+
+                <label>
+                  Email
+                  <input
+                    type="email"
+                    value={clientForm.email}
+                    onChange={(event) =>
+                      setClientForm((current) => ({
+                        ...current,
+                        email: event.target.value,
+                      }))
+                    }
+                    placeholder="Opcional"
+                  />
+                </label>
+              </div>
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="cancel-button"
+                  onClick={() => setShowClientModal(false)}
+                >
+                  Cancelar
+                </button>
+
+                <button type="submit" className="primary-button">
+                  Guardar cliente
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showServiceModal && (
+        <div className="modal-overlay">
+          <div className="reservation-modal">
+            <div className="modal-header">
+              <div>
+                <p className="section-label">
+                  {editingService
+                    ? "EDITAR SERVICIO"
+                    : "NUEVO SERVICIO"}
+                </p>
+
+                <h2>
+                  {editingService
+                    ? "Actualizar servicio"
+                    : "Crear servicio"}
+                </h2>
+              </div>
+
+              <button
+                className="close-button"
+                onClick={() => {
+                  setShowServiceModal(false);
+                  setEditingService(null);
+                }}
+              >
+                <Icon.Close />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveService}>
+              <div className="form-grid">
+                <label className="full-width">
+                  Nombre del servicio
+                  <input
+                    value={serviceForm.name}
+                    onChange={(event) =>
+                      setServiceForm((current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }))
+                    }
+                    placeholder="Ej: Corte Ejecutivo"
+                  />
+                </label>
+
+                <label className="full-width">
+                  Descripción
+                  <textarea
+                    rows={3}
+                    value={serviceForm.description}
+                    onChange={(event) =>
+                      setServiceForm((current) => ({
+                        ...current,
+                        description: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Duración
+                  <select
+                    value={serviceForm.duration}
+                    onChange={(event) =>
+                      setServiceForm((current) => ({
+                        ...current,
+                        duration: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="15">15 minutos</option>
+                    <option value="30">30 minutos</option>
+                    <option value="45">45 minutos</option>
+                    <option value="60">60 minutos</option>
+                    <option value="90">90 minutos</option>
+                  </select>
+                </label>
+
+                <label>
+                  Precio COP
+                  <input
+                    type="number"
+                    min="0"
+                    value={serviceForm.price}
+                    onChange={(event) =>
+                      setServiceForm((current) => ({
+                        ...current,
+                        price: event.target.value,
+                      }))
+                    }
+                    placeholder="Ej: 35000"
+                  />
+                </label>
+              </div>
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="cancel-button"
+                  onClick={() => {
+                    setShowServiceModal(false);
+                    setEditingService(null);
+                  }}
+                >
+                  Cancelar
+                </button>
+
+                <button type="submit" className="primary-button">
+                  {editingService
+                    ? "Guardar cambios"
+                    : "Crear servicio"}
                 </button>
               </div>
             </form>
