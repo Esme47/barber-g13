@@ -40,6 +40,25 @@ type Service = {
   active: boolean;
 };
 
+type PaymentMethod =
+  | "Efectivo"
+  | "Nequi"
+  | "Transferencia"
+  | "Tarjeta";
+
+type TransactionType = "Ingreso" | "Gasto";
+
+type Transaction = {
+  id: number;
+  concept: string;
+  category: string;
+  amount: number;
+  type: TransactionType;
+  paymentMethod: PaymentMethod;
+  time: string;
+  date: string;
+};
+
 const Icon = {
   Grid: () => <span>▦</span>,
   Calendar: () => <span>◫</span>,
