@@ -335,6 +335,61 @@ export default function Home() {
     { name: "Finanzas", icon: <Icon.Wallet /> },
   ];
 
+  const financialSummary = useMemo(() => {
+    const sales = transactions
+      .filter((transaction) => transaction.type === "Ingreso")
+      .reduce(
+        (total, transaction) =>
+          total + transaction.amount,
+        0
+      );
+
+    const expenses = transactions
+      .filter((transaction) => transaction.type === "Gasto")
+      .reduce(
+        (total, transaction) =>
+          total + transaction.amount,
+        0
+      );
+
+    const servicesCompleted = transactions.filter(
+      (transaction) =>
+        transaction.type === "Ingreso" &&
+        transaction.category !== "Producto"
+    ).length;
+
+    return {
+      sales,
+      expenses,
+      profit: sales - expenses,
+      servicesCompleted,
+    };
+  }, [transactions]);
+
+  const paymentSummary = useMemo(() => {
+    const methods: PaymentMethod[] = [
+      "Efectivo",
+      "Nequi",
+      "Transferencia",
+      "Tarjeta",
+    ];
+
+    return methods.map((method) => ({
+      method,
+      amount: transactions
+        .filter(
+          (transaction) =>
+            transaction.type === "Ingreso" &&
+            transaction.paymentMethod === method
+        )
+        .reduce(
+          (total, transaction) =>
+            total + transaction.amount,
+          0
+        ),
+    }));
+  }, [transactions]);
+
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("es-CO", {
       style: "currency",
