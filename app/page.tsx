@@ -202,6 +202,59 @@ const initialServices: Service[] = [
   },
 ];
 
+const initialTransactions: Transaction[] = [
+  {
+    id: 1,
+    concept: "Corte Premium",
+    category: "Servicio",
+    amount: 35000,
+    type: "Ingreso",
+    paymentMethod: "Efectivo",
+    time: "09:30",
+    date: "Hoy",
+  },
+  {
+    id: 2,
+    concept: "Corte + Barba",
+    category: "Servicio",
+    amount: 50000,
+    type: "Ingreso",
+    paymentMethod: "Nequi",
+    time: "10:45",
+    date: "Hoy",
+  },
+  {
+    id: 3,
+    concept: "Compra de insumos",
+    category: "Insumos",
+    amount: 45000,
+    type: "Gasto",
+    paymentMethod: "Transferencia",
+    time: "11:20",
+    date: "Hoy",
+  },
+  {
+    id: 4,
+    concept: "Experiencia G13",
+    category: "Servicio Premium",
+    amount: 60000,
+    type: "Ingreso",
+    paymentMethod: "Nequi",
+    time: "12:30",
+    date: "Hoy",
+  },
+  {
+    id: 5,
+    concept: "Corte Clásico",
+    category: "Servicio",
+    amount: 25000,
+    type: "Ingreso",
+    paymentMethod: "Efectivo",
+    time: "14:15",
+    date: "Hoy",
+  },
+];
+
 const hours = [
   "08:00",
   "09:00",
