@@ -283,6 +283,9 @@ export default function Home() {
   const [services, setServices] =
     useState<Service[]>(initialServices);
 
+  const [transactions, setTransactions] =
+    useState<Transaction[]>(initialTransactions);
+
   const [showAppointmentModal, setShowAppointmentModal] =
     useState(false);
 
