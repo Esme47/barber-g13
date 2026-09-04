@@ -998,117 +998,431 @@ button {
   }
 
   .stats-grid {
-    gap: 10px;
-  }
-
-  .stat-card {
-    padding: 16px;
-  }
-
-  .dashboard-grid {
-    margin-top: 10px;
-  }
-
-  .panel {
-    padding: 18px;
+    grid-template-columns: 1fr;
+    gap: 11px;
   }
 
   .quick-grid {
     grid-template-columns: 1fr;
   }
 
-  .agenda-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 15px;
+  .quick-grid button {
+    grid-template-columns: 25px 1fr;
   }
 
-  .date-navigation {
-    justify-content: space-between;
-  }
-
-  .today-button {
-    width: 100%;
+  .quick-grid span {
+    display: none;
   }
 
   .agenda-summary {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .agenda-sidebar {
+  .agenda-layout {
+    gap: 11px;
+  }
+
+  .services-grid {
     grid-template-columns: 1fr;
   }
 
-  .timeline-header,
-  .timeline-row {
-    grid-template-columns: 70px 1fr;
-  }
-
-  .timeline-header {
-    padding: 14px 10px;
-  }
-
-  .timeline-time {
-    padding: 22px 10px;
-  }
-
-  .timeline-content {
-    padding: 8px;
-  }
-
-  .agenda-appointment {
-    grid-template-columns: 38px 1fr;
-  }
-
-  .status-select {
-    grid-column: 2;
-    width: 100%;
-  }
-
-  .reservation-modal {
-    padding: 20px;
-  }
-
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .full-width {
-    grid-column: auto;
-  }
-
-  .modal-actions {
-    flex-direction: column-reverse;
-  }
-
-  .modal-actions button {
-    width: 100%;
-    justify-content: center;
+  .quick-grid button:last-child span {
+    display: inline;
   }
 }
 
-@media (max-width: 430px) {
-  .stats-grid {
-    grid-template-columns: 1fr;
+/* =========================================
+   V6.7 CLIENTES + SERVICIOS
+========================================= */
+
+.module-page {
+  padding-bottom: 30px;
+}
+
+.module-heading {
+  padding: 45px 0 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px;
+}
+
+.module-heading h1 {
+  margin: 0;
+  font-size: 48px;
+  letter-spacing: -2px;
+}
+
+.module-heading em {
+  color: var(--gold);
+  font-family: "Playfair Display", serif;
+}
+
+/* MINI STATS */
+
+.module-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.mini-stat {
+  background: #151518;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.mini-stat span {
+  display: block;
+  color: #777;
+  font-size: 9px;
+  letter-spacing: 1.3px;
+  margin-bottom: 10px;
+}
+
+.mini-stat strong {
+  color: var(--gold-light);
+  font-size: 26px;
+}
+
+/* SEARCH */
+
+.search-bar {
+  height: 54px;
+  background: #141417;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 17px;
+  color: var(--gold);
+  margin-bottom: 16px;
+}
+
+.search-bar input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #eee;
+  font-size: 13px;
+}
+
+.search-bar input::placeholder {
+  color: #666;
+}
+
+/* CLIENTS */
+
+.clients-list {
+  display: grid;
+  gap: 10px;
+}
+
+.client-card {
+  background: #151518;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 17px 20px;
+  display: grid;
+  grid-template-columns: 52px minmax(180px, 1fr) 100px 190px auto;
+  gap: 18px;
+  align-items: center;
+  transition: 0.2s;
+}
+
+.client-card:hover {
+  border-color: #4c4027;
+  transform: translateY(-1px);
+}
+
+.large-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #2b2418;
+  border: 1px solid #5a4728;
+  color: var(--gold-light);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.client-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.client-main h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.client-main span,
+.client-main small {
+  color: #85858b;
+  font-size: 11px;
+}
+
+.client-metric,
+.client-service {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.client-metric span,
+.client-service span {
+  color: #666;
+  font-size: 8px;
+  letter-spacing: 1px;
+}
+
+.client-metric strong,
+.client-service strong {
+  font-size: 12px;
+  color: #ddd;
+}
+
+.client-action {
+  border: 1px solid #47391f;
+  background: #211c13;
+  color: var(--gold-light);
+  padding: 10px 13px;
+  border-radius: 8px;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 10px;
+}
+
+/* EMPTY */
+
+.empty-state {
+  border: 1px dashed #35353a;
+  border-radius: 15px;
+  padding: 70px 20px;
+  text-align: center;
+  color: #777;
+}
+
+.empty-state h3 {
+  color: #ccc;
+  margin: 15px 0 7px;
+}
+
+.empty-state p {
+  font-size: 12px;
+}
+
+/* SERVICES */
+
+.services-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.service-card {
+  background: linear-gradient(145deg, #18181b, #121214);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 22px;
+  transition: 0.2s;
+}
+
+.service-card:hover {
+  transform: translateY(-2px);
+  border-color: #584727;
+}
+
+.service-inactive {
+  opacity: 0.48;
+}
+
+.service-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.service-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #2a2318;
+  color: var(--gold);
+  font-size: 18px;
+}
+
+.service-card h3 {
+  margin: 22px 0 8px;
+  font-size: 17px;
+}
+
+.service-card > p {
+  color: #85858b;
+  font-size: 11px;
+  line-height: 1.6;
+  min-height: 53px;
+}
+
+.service-details {
+  border-top: 1px solid #29292d;
+  border-bottom: 1px solid #29292d;
+  padding: 15px 0;
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.service-details div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.service-details span {
+  color: #666;
+  font-size: 8px;
+  letter-spacing: 1px;
+}
+
+.service-details strong {
+  font-size: 13px;
+  color: var(--gold-light);
+}
+
+.service-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 17px;
+}
+
+.service-actions button {
+  flex: 1;
+  background: #1d1d21;
+  border: 1px solid #333;
+  color: #bbb;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+}
+
+.service-actions .delete-button {
+  flex: 0 0 42px;
+  color: #d57676;
+}
+
+/* SWITCH */
+
+.switch {
+  position: relative;
+  width: 38px;
+  height: 21px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch span {
+  position: absolute;
+  inset: 0;
+  background: #35353a;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.switch span::before {
+  content: "";
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  left: 3px;
+  top: 3px;
+  border-radius: 50%;
+  background: #aaa;
+  transition: 0.2s;
+}
+
+.switch input:checked + span {
+  background: #8b6c32;
+}
+
+.switch input:checked + span::before {
+  transform: translateX(17px);
+  background: #f0d28c;
+}
+
+/* MODAL SIZE */
+
+.small-modal {
+  width: min(540px, 100%);
+}
+
+/* RESPONSIVE V6.7 */
+
+@media (max-width: 1100px) {
+  .services-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 
-  .appointment {
-    grid-template-columns: 45px 35px 1fr;
+  .client-card {
+    grid-template-columns: 52px 1fr 100px auto;
   }
 
-  .appointment .status {
+  .client-service {
     display: none;
   }
+}
 
-  .agenda-summary {
-    grid-template-columns: 1fr 1fr;
+@media (max-width: 720px) {
+  .module-heading {
+    padding: 32px 0 25px;
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .agenda-heading h1 {
-    font-size: 33px;
+  .module-heading h1 {
+    font-size: 37px;
   }
 
-  .date-navigation strong {
-    font-size: 12px;
+  .module-stats {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .client-card {
+    grid-template-columns: 48px 1fr;
+    gap: 13px;
+  }
+
+  .client-metric {
+    grid-column: 1 / 2;
+  }
+
+  .client-action {
+    grid-column: 2 / 3;
+    justify-content: center;
+  }
+
+  .services-grid {
+    grid-template-columns: 1fr;
   }
 }
