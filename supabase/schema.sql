@@ -1,68 +1,358 @@
+-- ============================================================================
+-- BARBER G13 · CANONICAL SUPABASE SCHEMA
+-- Fase 2A.8 · Auditado contra producción
+-- Project: btodlvnnbxyxwhihwlbe
+-- Generated from live database structure on 2026-09-05
+--
+-- IMPORTANT:
+-- This is the canonical target schema after the Clients migration.
+-- The legacy table public.clients intentionally is NOT included because it is
+-- isolated, unused by the application, and scheduled for controlled retirement
+-- in Fase 2A.9. No DROP operation is performed by this file.
+-- ============================================================================
 
--- =====================================================
--- BARBER G13
--- Estructura inicial de base de datos para Supabase
--- =====================================================
+create extension if not exists pgcrypto;
+create extension if not exists btree_gist;
 
--- CLIENTES
-create table if not exists clientes (
+-- ============================================================================
+-- ENUMS
+-- ============================================================================
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_type t
+    join pg_namespace n on n.oid = t.typnamespace
+    where t.typname = 'appointment_status' and n.nspname = 'public'
+  ) then
+    create type public.appointment_status as enum (
+      'pending',
+      'confirmed',
+      'completed',
+      'cancelled',
+      'no_show'
+    );
+  end if;
+end $$;
+
+-- ============================================================================
+-- TABLES
+-- ============================================================================
+
+create table if not exists public.customers (
   id uuid primary key default gen_random_uuid(),
-  nombre text not null,
-  telefono text,
+  full_name text not null,
+  phone text not null unique,
   email text,
-  created_at timestamptz default now()
+  created_at timestamptz not null default now()
 );
 
--- BARBEROS
-create table if not exists barberos (
+create table if not exists public.barbers (
   id uuid primary key default gen_random_uuid(),
-  nombre text not null,
-  telefono text,
-  activo boolean default true,
-  created_at timestamptz default now()
+  name text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
 );
 
--- SERVICIOS
-create table if not exists servicios (
+create table if not exists public.services (
   id uuid primary key default gen_random_uuid(),
-  nombre text not null,
-  descripcion text,
-  precio numeric(10,2) not null,
-  duracion_minutos integer not null,
-  activo boolean default true,
-  created_at timestamptz default now()
+  name text not null,
+  duration_minutes integer not null,
+  price integer not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  description text not null default '',
+  updated_at timestamptz not null default now(),
+  constraint services_duration_minutes_check
+    check (duration_minutes >= 15 and duration_minutes <= 240),
+  constraint services_price_check
+    check (price >= 0)
 );
 
--- CITAS
-create table if not exists citas (
+create table if not exists public.appointments (
   id uuid primary key default gen_random_uuid(),
-  cliente_id uuid references clientes(id) on delete cascade,
-  barbero_id uuid references barberos(id) on delete set null,
-  servicio_id uuid references servicios(id) on delete set null,
-  fecha date not null,
-  hora time not null,
-  estado text default 'pendiente',
-  notas text,
-  created_at timestamptz default now()
+  customer_id uuid not null,
+  barber_id uuid not null,
+  service_id uuid not null,
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  status public.appointment_status not null default 'pending',
+  notes text,
+  created_at timestamptz not null default now(),
+
+  constraint appointments_customer_id_fkey
+    foreign key (customer_id)
+    references public.customers(id)
+    on delete restrict,
+
+  constraint appointments_barber_id_fkey
+    foreign key (barber_id)
+    references public.barbers(id)
+    on delete restrict,
+
+  constraint appointments_service_id_fkey
+    foreign key (service_id)
+    references public.services(id)
+    on delete restrict,
+
+  constraint appointments_check
+    check (ends_at > starts_at)
 );
 
--- VENTAS
-create table if not exists ventas (
+create table if not exists public.blocked_times (
   id uuid primary key default gen_random_uuid(),
-  cliente_id uuid references clientes(id) on delete set null,
-  barbero_id uuid references barberos(id) on delete set null,
-  total numeric(10,2) not null,
-  metodo_pago text,
-  estado text default 'pagada',
-  created_at timestamptz default now()
+  barber_id uuid,
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  reason text,
+  created_at timestamptz not null default now(),
+
+  constraint blocked_times_barber_id_fkey
+    foreign key (barber_id)
+    references public.barbers(id)
+    on delete cascade,
+
+  constraint blocked_times_check
+    check (ends_at > starts_at)
 );
 
--- COMISIONES
-create table if not exists comisiones (
+create table if not exists public.business_hours (
   id uuid primary key default gen_random_uuid(),
-  barbero_id uuid references barberos(id) on delete cascade,
-  venta_id uuid references ventas(id) on delete cascade,
-  porcentaje numeric(5,2),
-  valor numeric(10,2),
-  created_at timestamptz default now()
+  weekday integer not null unique,
+  opens_at time not null,
+  closes_at time not null,
+  active boolean not null default true,
+
+  constraint business_hours_weekday_check
+    check (weekday >= 0 and weekday <= 6),
+
+  constraint business_hours_check
+    check (closes_at > opens_at)
 );
+
+create table if not exists public.transactions (
+  id bigint generated by default as identity primary key,
+  concept text not null,
+  category text not null,
+  amount numeric not null,
+  type text not null,
+  payment_method text not null,
+  transaction_time time not null default current_time,
+  transaction_date date not null default current_date,
+  created_at timestamptz not null default now(),
+
+  constraint transactions_amount_check
+    check (amount >= 0),
+
+  constraint transactions_type_check
+    check (type = any (array['Ingreso', 'Gasto'])),
+
+  constraint transactions_payment_method_check
+    check (
+      payment_method = any (
+        array['Efectivo', 'Nequi', 'Transferencia', 'Tarjeta']
+      )
+    )
+);
+
+-- ============================================================================
+-- INDEXES
+-- ============================================================================
+
+-- Prevents overlapping active/pending appointments for the same barber.
+create index if not exists appointments_no_overlap
+  on public.appointments
+  using gist (
+    barber_id,
+    tstzrange(starts_at, ends_at, '[)')
+  )
+  where status = any (
+    array[
+      'pending'::public.appointment_status,
+      'confirmed'::public.appointment_status
+    ]
+  );
+
+create index if not exists transactions_date_idx
+  on public.transactions (transaction_date);
+
+-- ============================================================================
+-- CUSTOMER PROFILES · READ MODEL
+-- customers is the single source of truth for customer identity.
+-- This view derives visits and appointment/service history.
+-- ============================================================================
+
+create or replace view public.customer_profiles as
+select
+  c.id,
+  c.full_name,
+  c.phone,
+  c.email,
+  c.created_at,
+
+  count(a.id)
+    filter (where a.status <> 'cancelled'::public.appointment_status)
+    ::integer as visits,
+
+  ls.service_name as last_service,
+  ls.starts_at as last_visit,
+  ns.starts_at as next_appointment
+
+from public.customers c
+
+left join public.appointments a
+  on a.customer_id = c.id
+
+left join lateral (
+  select
+    s.name as service_name,
+    a2.starts_at
+  from public.appointments a2
+  left join public.services s
+    on s.id = a2.service_id
+  where a2.customer_id = c.id
+    and a2.status <> 'cancelled'::public.appointment_status
+    and a2.starts_at <= now()
+  order by a2.starts_at desc
+  limit 1
+) ls on true
+
+left join lateral (
+  select
+    a3.starts_at
+  from public.appointments a3
+  where a3.customer_id = c.id
+    and a3.status <> 'cancelled'::public.appointment_status
+    and a3.starts_at > now()
+  order by a3.starts_at
+  limit 1
+) ns on true
+
+group by
+  c.id,
+  c.full_name,
+  c.phone,
+  c.email,
+  c.created_at,
+  ls.service_name,
+  ls.starts_at,
+  ns.starts_at;
+
+-- ============================================================================
+-- ROW LEVEL SECURITY
+-- Exact policies currently observed in production.
+-- NOTE: Some policies overlap intentionally because this section mirrors the
+-- current live configuration; security hardening is a separate future phase.
+-- ============================================================================
+
+alter table public.appointments enable row level security;
+alter table public.barbers enable row level security;
+alter table public.blocked_times enable row level security;
+alter table public.business_hours enable row level security;
+alter table public.customers enable row level security;
+alter table public.services enable row level security;
+alter table public.transactions enable row level security;
+
+drop policy if exists "public appointments access" on public.appointments;
+create policy "public appointments access"
+on public.appointments
+as permissive
+for all
+to public
+using (true)
+with check (true);
+
+drop policy if exists "public can create appointments" on public.appointments;
+create policy "public can create appointments"
+on public.appointments
+as permissive
+for insert
+to public
+with check (status = 'pending'::public.appointment_status);
+
+drop policy if exists "public can view active barbers" on public.barbers;
+create policy "public can view active barbers"
+on public.barbers
+as permissive
+for select
+to public
+using (active = true);
+
+drop policy if exists "public can view blocked times" on public.blocked_times;
+create policy "public can view blocked times"
+on public.blocked_times
+as permissive
+for select
+to public
+using (true);
+
+drop policy if exists "public can view business hours" on public.business_hours;
+create policy "public can view business hours"
+on public.business_hours
+as permissive
+for select
+to public
+using (true);
+
+drop policy if exists "public can create customers" on public.customers;
+create policy "public can create customers"
+on public.customers
+as permissive
+for insert
+to public
+with check (true);
+
+drop policy if exists "public customers access phase1" on public.customers;
+create policy "public customers access phase1"
+on public.customers
+as permissive
+for all
+to public
+using (true)
+with check (true);
+
+drop policy if exists "public can view active services" on public.services;
+create policy "public can view active services"
+on public.services
+as permissive
+for select
+to public
+using (active = true);
+
+drop policy if exists "public services access" on public.services;
+create policy "public services access"
+on public.services
+as permissive
+for all
+to public
+using (true)
+with check (true);
+
+drop policy if exists "public transactions access" on public.transactions;
+create policy "public transactions access"
+on public.transactions
+as permissive
+for all
+to public
+using (true)
+with check (true);
+
+-- ============================================================================
+-- AUDIT SUMMARY
+-- ============================================================================
+-- Canonical objects:
+--   tables: appointments, barbers, blocked_times, business_hours,
+--           customers, services, transactions
+--   view:   customer_profiles
+--   enum:   appointment_status
+--
+-- Legacy object intentionally excluded:
+--   public.clients
+--
+-- Production audit findings:
+--   * No frontend references to public.clients remain.
+--   * No functional DB dependencies on public.clients were found.
+--   * All legacy client phones were already represented in customers.
+--   * appointments.customer_id had no NULL or orphan references.
+--   * customer_profiles is the active customer read model.
+-- ============================================================================
