@@ -3,7 +3,87 @@ import type { AuthContext } from "@/lib/auth";
 import type { Appointment, Barber, Client, HistoricalAppointment, Service, Transaction } from "./types";
 import { dateKey, dbToUiStatus, formatRegisteredDate } from "./utils";
 
-export async function loadBarberG13Data(authContext: AuthContext, selectedDate: Date): Promise<{ clients: Client[]; services: Service[]; barbers: Barber[]; appointments: Appointment[]; transactions: Transaction[]; historicalAppointments: HistoricalAppointment[] }> {
+type CustomerProfileRow = {
+  id: string;
+  full_name: string | null;
+  phone: string | null;
+  email: string | null;
+  created_at: string;
+  visits: number | null;
+  last_service: string | null;
+  last_visit: string | null;
+  next_appointment: string | null;
+};
+
+type ServiceRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  duration_minutes: number;
+  price: number;
+  active: boolean;
+};
+
+type BarberRow = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
+type TransactionRow = {
+  id: number;
+  concept: string;
+  category: string;
+  amount: number;
+  type: Transaction["type"];
+  payment_method: Transaction["paymentMethod"];
+  transaction_time: string | null;
+  transaction_date: string | null;
+  appointment_id: string | null;
+};
+
+type CustomerReference = { full_name: string | null; phone?: string | null } | Array<{ full_name: string | null; phone?: string | null }> | null;
+type ServiceReference = { name: string | null; price?: number | null; duration_minutes?: number | null } | Array<{ name: string | null; price?: number | null; duration_minutes?: number | null }> | null;
+type BarberReference = { name: string | null } | Array<{ name: string | null }> | null;
+
+type HistoricalAppointmentRow = {
+  id: string;
+  starts_at: string;
+  customer_id: string;
+  service_id: string;
+  barber_id: string;
+  customers: CustomerReference;
+  services: ServiceReference;
+  barbers: BarberReference;
+};
+
+type AppointmentRow = {
+  id: string;
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  notes: string | null;
+  customer_id: string;
+  barber_id: string;
+  service_id: string;
+  customers: CustomerReference;
+  services: ServiceReference;
+  barbers: BarberReference;
+};
+
+const firstReference = <T,>(value: T | T[] | null): T | null => Array.isArray(value) ? value[0] ?? null : value;
+
+export async function loadBarberG13Data(
+  authContext: AuthContext,
+  selectedDate: Date,
+): Promise<{
+  clients: Client[];
+  services: Service[];
+  barbers: Barber[];
+  appointments: Appointment[];
+  transactions: Transaction[];
+  historicalAppointments: HistoricalAppointment[];
+}> {
   const isAdmin = authContext.role === "admin";
   const dayStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
   const nextDayStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + 1, 0, 0, 0, 0);
@@ -20,14 +100,49 @@ export async function loadBarberG13Data(authContext: AuthContext, selectedDate: 
   if (servicesRes.error) throw servicesRes.error;
   if (barbersRes.error) throw barbersRes.error;
   if (appointmentsRes.error) throw appointmentsRes.error;
-  let transactionsData: any[] = [];
-  if (transactionsQuery) { const transactionsRes = await transactionsQuery; if (transactionsRes.error) throw transactionsRes.error; transactionsData = transactionsRes.data || []; }
-  return {
-    clients: (clientsRes.data || []).map((c: any) => ({ id: c.id, name: c.full_name || "", phone: c.phone || "", email: c.email || "", visits: Number(c.visits || 0), lastService: c.last_service || "Sin servicios registrados", lastVisit: c.last_visit || null, nextAppointment: c.next_appointment || null, registeredAt: formatRegisteredDate(c.created_at), createdAt: c.created_at })),
-    services: (servicesRes.data || []).map((s: any) => ({ id: s.id, name: s.name, description: s.description || "", duration: Number(s.duration_minutes), price: Number(s.price), active: Boolean(s.active) })),
-    transactions: transactionsData.map((t: any) => ({ id: Number(t.id), concept: t.concept, category: t.category, amount: Number(t.amount), type: t.type, paymentMethod: t.payment_method, time: String(t.transaction_time || "").slice(0, 5), date: String(t.transaction_date || ""), appointmentId: t.appointment_id || null })),
-    historicalAppointments: (historicalRes.data || []).map((a: any) => { const customer = Array.isArray(a.customers) ? a.customers[0] : a.customers, service = Array.isArray(a.services) ? a.services[0] : a.services, barber = Array.isArray(a.barbers) ? a.barbers[0] : a.barbers, starts = new Date(a.starts_at); return { id: a.id, date: dateKey(starts), time: starts.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false }), name: customer?.full_name || "Cliente", service: service?.name || "Servicio", serviceId: a.service_id, barber: barber?.name || "Barbero", price: Number(service?.price || 0) }; }),
-    barbers: (barbersRes.data || []).map((b: any) => ({ id: b.id, name: b.name, active: b.active })),
-    appointments: (appointmentsRes.data || []).map((a: any) => { const starts = new Date(a.starts_at), ends = new Date(a.ends_at), customer = Array.isArray(a.customers) ? a.customers[0] : a.customers, service = Array.isArray(a.services) ? a.services[0] : a.services, barber = Array.isArray(a.barbers) ? a.barbers[0] : a.barbers; return { id: a.id, time: starts.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false }), date: day, name: customer?.full_name || "Cliente", phone: customer?.phone || "", service: service?.name || "Servicio", serviceId: a.service_id, barber: barber?.name || "Barbero", barberId: a.barber_id, customerId: a.customer_id, duration: Math.max(15, Math.round((ends.getTime() - starts.getTime()) / 60000)), status: dbToUiStatus(a.status), notes: a.notes || "" }; }),
-  };
+
+  let transactionsData: TransactionRow[] = [];
+  if (transactionsQuery) {
+    const transactionsRes = await transactionsQuery;
+    if (transactionsRes.error) throw transactionsRes.error;
+    transactionsData = (transactionsRes.data || []) as TransactionRow[];
+  }
+
+  const clients = (clientsRes.data || []).map((c) => {
+    const row = c as unknown as CustomerProfileRow;
+    return { id: row.id, name: row.full_name || "", phone: row.phone || "", email: row.email || "", visits: Number(row.visits || 0), lastService: row.last_service || "Sin servicios registrados", lastVisit: row.last_visit || null, nextAppointment: row.next_appointment || null, registeredAt: formatRegisteredDate(row.created_at), createdAt: row.created_at };
+  });
+
+  const services = (servicesRes.data || []).map((s) => {
+    const row = s as unknown as ServiceRow;
+    return { id: row.id, name: row.name, description: row.description || "", duration: Number(row.duration_minutes), price: Number(row.price), active: Boolean(row.active) };
+  });
+
+  const transactions = transactionsData.map((t) => ({ id: Number(t.id), concept: t.concept, category: t.category, amount: Number(t.amount), type: t.type, paymentMethod: t.payment_method, time: String(t.transaction_time || "").slice(0, 5), date: String(t.transaction_date || ""), appointmentId: t.appointment_id || null }));
+
+  const historicalAppointments = (historicalRes.data || []).map((value) => {
+    const a = value as unknown as HistoricalAppointmentRow;
+    const customer = firstReference(a.customers);
+    const service = firstReference(a.services);
+    const barber = firstReference(a.barbers);
+    const starts = new Date(a.starts_at);
+    return { id: a.id, date: dateKey(starts), time: starts.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false }), name: customer?.full_name || "Cliente", service: service?.name || "Servicio", serviceId: a.service_id, barber: barber?.name || "Barbero", price: Number(service?.price || 0) };
+  });
+
+  const barbers = (barbersRes.data || []).map((b) => {
+    const row = b as unknown as BarberRow;
+    return { id: row.id, name: row.name, active: row.active };
+  });
+
+  const appointments = (appointmentsRes.data || []).map((value) => {
+    const a = value as unknown as AppointmentRow;
+    const starts = new Date(a.starts_at);
+    const ends = new Date(a.ends_at);
+    const customer = firstReference(a.customers);
+    const service = firstReference(a.services);
+    const barber = firstReference(a.barbers);
+    return { id: a.id, time: starts.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false }), date: day, name: customer?.full_name || "Cliente", phone: customer?.phone || "", service: service?.name || "Servicio", serviceId: a.service_id, barber: barber?.name || "Barbero", barberId: a.barber_id, customerId: a.customer_id, duration: Math.max(15, Math.round((ends.getTime() - starts.getTime()) / 60000)), status: dbToUiStatus(a.status), notes: a.notes || "" };
+  });
+
+  return { clients, services, barbers, appointments, transactions, historicalAppointments };
 }
