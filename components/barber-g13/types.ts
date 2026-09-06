@@ -8,3 +8,6 @@ export type Transaction = { id:number; concept:string; category:string; amount:n
 export type HistoricalAppointment = { id:string; date:string; time:string; name:string; service:string; serviceId:string; barber:string; price:number; };
 export type Barber = { id:string; name:string; active:boolean; };
 export type Appointment = { id:string; time:string; date:string; name:string; phone:string; service:string; serviceId:string; barber:string; barberId:string; customerId:string; duration:number; status:AppointmentStatus; notes?:string; };
+// weekday follows JS Date.getDay(): 0 = Sunday ... 6 = Saturday, matching the
+// public.business_hours check constraint (weekday between 0 and 6).
+export type BusinessHours = { weekday:number; opensAt:string; closesAt:string; active:boolean; };
