@@ -39,6 +39,14 @@ export type SaveTransactionInput = {
   time: string;
 };
 
+export type CreateBlockedTimeInput = {
+  barberId: string;
+  time: string;
+  durationMinutes: number;
+  reason: string;
+  selectedDate: Date;
+};
+
 function assertValidPaymentMethod(paymentMethod: PaymentMethod) {
   if (!["Efectivo", "Nequi", "Transferencia", "Tarjeta"].includes(paymentMethod)) {
     throw new Error("Método de pago no válido.");
@@ -47,8 +55,21 @@ function assertValidPaymentMethod(paymentMethod: PaymentMethod) {
 
 // Postgres error codes we want to translate into friendly, actionable
 // messages instead of surfacing raw database text to the user.
-const PG_EXCLUSION_VIOLATION = "23P01"; // overlapping appointment for the same barber
+const PG_EXCLUSION_VIOLATION = "23P01"; // overlapping appointment/block for the same barber
 const PG_UNIQUE_VIOLATION = "23505"; // duplicate phone, etc.
+const PG_RAISE_EXCEPTION = "P0001"; // custom trigger-raised errors (see migration wire_blocked_times_agenda)
+
+function isRaisedMessage(error: unknown, marker: string): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: string }).code === PG_RAISE_EXCEPTION &&
+      "message" in error &&
+      typeof (error as { message?: string }).message === "string" &&
+      (error as { message: string }).message.includes(marker)
+  );
+}
 
 export async function createAppointment(authContext: AuthContext, input: CreateAppointmentInput) {
   const effectiveBarberId = authContext.role === "barber" ? authContext.barberId : input.barberId;
@@ -103,6 +124,14 @@ export async function createAppointment(authContext: AuthContext, input: CreateA
     if (error.code === PG_EXCLUSION_VIOLATION) {
       throw new Error(
         "Ese horario ya no está disponible: se cruza con otra cita de este barbero. Elige otra hora o actualiza la agenda."
+      );
+    }
+    // A trigger blocks booking into a time the barber has manually blocked
+    // (lunch, personal appointment, day off) — see the
+    // wire_blocked_times_agenda migration.
+    if (isRaisedMessage(error, "APPOINTMENT_CONFLICTS_WITH_BLOCKED_TIME")) {
+      throw new Error(
+        "Ese horario está bloqueado por el barbero (por ejemplo, almuerzo o ausencia). Elige otro horario."
       );
     }
     throw error;
@@ -241,5 +270,42 @@ export async function linkHistoricalIncomeToAppointment(
     p_amount: amount,
     p_payment_method: paymentMethod,
   });
+  if (error) throw error;
+}
+
+export async function createBlockedTime(authContext: AuthContext, input: CreateBlockedTimeInput) {
+  const effectiveBarberId = authContext.role === "barber" ? authContext.barberId : input.barberId;
+  const duration = Number(input.durationMinutes);
+
+  if (!effectiveBarberId) throw new Error("Selecciona un barbero.");
+  if (!Number.isFinite(duration) || duration <= 0) throw new Error("La duración del bloqueo no es válida.");
+  if (!/^\d{2}:\d{2}$/.test(input.time)) throw new Error("La hora no es válida.");
+
+  const day = dateKey(input.selectedDate);
+  const startsAt = new Date(`${day}T${input.time}:00`);
+  if (Number.isNaN(startsAt.getTime())) throw new Error("La fecha u hora no es válida.");
+  const endsAt = new Date(startsAt.getTime() + duration * 60000);
+
+  const { error } = await supabase.from("blocked_times").insert({
+    barber_id: effectiveBarberId,
+    starts_at: startsAt.toISOString(),
+    ends_at: endsAt.toISOString(),
+    reason: input.reason.trim() || null,
+  });
+
+  if (error) {
+    if (error.code === PG_EXCLUSION_VIOLATION) {
+      throw new Error("Ese horario ya está bloqueado o se cruza con otro bloqueo de este barbero.");
+    }
+    if (isRaisedMessage(error, "BLOCKED_TIME_CONFLICTS_WITH_APPOINTMENT")) {
+      throw new Error("No puedes bloquear ese horario: ya hay una cita agendada en ese rango.");
+    }
+    throw error;
+  }
+}
+
+export async function deleteBlockedTime(id: string) {
+  if (!id) throw new Error("Bloqueo no válido.");
+  const { error } = await supabase.from("blocked_times").delete().eq("id", id);
   if (error) throw error;
 }
