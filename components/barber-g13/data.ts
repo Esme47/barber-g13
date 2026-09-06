@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { AuthContext } from "@/lib/auth";
-import type { Appointment, Barber, BusinessHours, Client, HistoricalAppointment, Service, Transaction } from "./types";
+import type { Appointment, Barber, BlockedTime, BusinessHours, Client, HistoricalAppointment, Service, Transaction } from "./types";
 import { dateKey, dbToUiStatus, formatRegisteredDate } from "./utils";
 
 type CustomerProfileRow = {
@@ -78,6 +78,15 @@ type AppointmentRow = {
   barbers: BarberReference;
 };
 
+type BlockedTimeRow = {
+  id: string;
+  starts_at: string;
+  ends_at: string;
+  reason: string | null;
+  barber_id: string;
+  barbers: BarberReference;
+};
+
 const firstReference = <T,>(value: T | T[] | null): T | null => Array.isArray(value) ? value[0] ?? null : value;
 
 export async function loadBarberG13Data(
@@ -91,6 +100,7 @@ export async function loadBarberG13Data(
   transactions: Transaction[];
   historicalAppointments: HistoricalAppointment[];
   businessHours: BusinessHours[];
+  blockedTimes: BlockedTime[];
 }> {
   const isAdmin = authContext.role === "admin";
   const dayStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
@@ -103,13 +113,18 @@ export async function loadBarberG13Data(
   const appointmentsQuery = supabase.from("appointments").select(`id, starts_at, ends_at, status, notes, customer_id, barber_id, service_id, customers(full_name,phone), services(name,duration_minutes), barbers(name)`).gte("starts_at", dayStart.toISOString()).lt("starts_at", nextDayStart.toISOString()).order("starts_at", { ascending: true });
   const transactionsQuery = isAdmin ? supabase.from("transactions").select("*").order("transaction_date", { ascending: false }).order("transaction_time", { ascending: false }).order("id", { ascending: false }) : null;
   const businessHoursQuery = supabase.from("business_hours").select("weekday,opens_at,closes_at,active").order("weekday", { ascending: true });
-  const [clientsRes, historicalRes, servicesRes, barbersRes, appointmentsRes, businessHoursRes] = await Promise.all([clientsQuery, historicalQuery || Promise.resolve({ data: [], error: null }), servicesQuery, barbersQuery, appointmentsQuery, businessHoursQuery]);
+  // blocked_times: RLS already scopes this per role (admin sees every
+  // barber's blocks, a barber only sees their own), so no extra filtering is
+  // needed here beyond the selected day's window, same as appointments.
+  const blockedTimesQuery = supabase.from("blocked_times").select(`id, starts_at, ends_at, reason, barber_id, barbers(name)`).gte("starts_at", dayStart.toISOString()).lt("starts_at", nextDayStart.toISOString()).order("starts_at", { ascending: true });
+  const [clientsRes, historicalRes, servicesRes, barbersRes, appointmentsRes, businessHoursRes, blockedTimesRes] = await Promise.all([clientsQuery, historicalQuery || Promise.resolve({ data: [], error: null }), servicesQuery, barbersQuery, appointmentsQuery, businessHoursQuery, blockedTimesQuery]);
   if (clientsRes.error) throw clientsRes.error;
   if (historicalRes.error) throw historicalRes.error;
   if (servicesRes.error) throw servicesRes.error;
   if (barbersRes.error) throw barbersRes.error;
   if (appointmentsRes.error) throw appointmentsRes.error;
   if (businessHoursRes.error) throw businessHoursRes.error;
+  if (blockedTimesRes.error) throw blockedTimesRes.error;
 
   let transactionsData: TransactionRow[] = [];
   if (transactionsQuery) {
@@ -159,5 +174,13 @@ export async function loadBarberG13Data(
     return { id: a.id, time: starts.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false }), date: day, name: customer?.full_name || "Cliente", phone: customer?.phone || "", service: service?.name || "Servicio", serviceId: a.service_id, barber: barber?.name || "Barbero", barberId: a.barber_id, customerId: a.customer_id, duration: Math.max(15, Math.round((ends.getTime() - starts.getTime()) / 60000)), status: dbToUiStatus(a.status), notes: a.notes || "" };
   });
 
-  return { clients, services, barbers, appointments, transactions, historicalAppointments, businessHours };
+  const blockedTimes = (blockedTimesRes.data || []).map((value) => {
+    const b = value as unknown as BlockedTimeRow;
+    const starts = new Date(b.starts_at);
+    const ends = new Date(b.ends_at);
+    const barber = firstReference(b.barbers);
+    return { id: b.id, time: starts.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false }), date: day, barberId: b.barber_id, barber: barber?.name || "Barbero", duration: Math.max(5, Math.round((ends.getTime() - starts.getTime()) / 60000)), reason: b.reason || "Bloqueado" };
+  });
+
+  return { clients, services, barbers, appointments, transactions, historicalAppointments, businessHours, blockedTimes };
 }
