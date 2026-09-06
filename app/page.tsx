@@ -17,7 +17,7 @@ type Appointment = { id:string; time:string; date:string; name:string; phone:str
 const Icon = { Grid: () => <span>▦</span>, Calendar: () => <span>◫</span>, Users: () => <span>♙</span>, Scissors: () => <span>✂</span>, Wallet: () => <span>◈</span>, Settings: () => <span>⚙</span>, Menu: () => <span>☰</span>, Plus: () => <span>＋</span>, ArrowLeft: () => <span>‹</span>, ArrowRight: () => <span>›</span>, Close: () => <span>×</span>, Phone: () => <span>☎</span>, Search: () => <span>⌕</span>, Edit: () => <span>✎</span> };
 const hours=["08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00"];
 const dbToUiStatus=(s:string):AppointmentStatus=>({pending:"Pendiente",confirmed:"Confirmada",completed:"Finalizada",cancelled:"Cancelada",no_show:"Cancelada"}[s] as AppointmentStatus)||"Pendiente";
-const uiToDbStatus=(s:AppointmentStatus):DbAppointmentStatus=>({"Pendiente":"pending","Confirmada":"confirmed","En proceso":"confirmed","Finalizada":"completed","Cancelada":"cancelled"}[s]);
+const uiToDbStatus=(s:AppointmentStatus):DbAppointmentStatus=>({"Pendiente":"pending","Confirmada":"confirmed","En proceso":"confirmed","Finalizada":"completed","Cancelada":"cancelled"}[s] as DbAppointmentStatus);
 const dateKey=(d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 const normalizePhone=(value:string)=>{const digits=value.replace(/\D/g,"");return /^57\d{10}$/.test(digits)?digits.slice(2):digits;};
 const formatRegisteredDate=(value:string)=>!value?"":new Date(value).toLocaleDateString("es-CO",{day:"2-digit",month:"short",year:"numeric"});
