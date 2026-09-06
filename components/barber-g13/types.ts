@@ -11,3 +11,7 @@ export type Appointment = { id:string; time:string; date:string; name:string; ph
 // weekday follows JS Date.getDay(): 0 = Sunday ... 6 = Saturday, matching the
 // public.business_hours check constraint (weekday between 0 and 6).
 export type BusinessHours = { weekday:number; opensAt:string; closesAt:string; active:boolean; };
+// Agenda 2.0: manual time block (lunch, personal appointment, day off) for a
+// barber. Mirrors Appointment's time/duration shape so it can reuse the same
+// hour-bucket logic in the agenda timeline.
+export type BlockedTime = { id:string; barberId:string; barber:string; time:string; date:string; duration:number; reason:string; };
