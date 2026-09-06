@@ -21,10 +21,14 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet, headers) {
           cookiesToSet.forEach(({ name, value, options }) => {
             request.cookies.set(name, value);
             response.cookies.set(name, value, options);
+          });
+
+          Object.entries(headers ?? {}).forEach(([key, value]) => {
+            response.headers.set(key, value);
           });
         },
       },
@@ -40,12 +44,17 @@ export async function middleware(request: NextRequest) {
   const isLoginPage = pathname === LOGIN_PATH;
 
   if (userError || !user) {
-    if (isLoginPage) return response;
+    if (isLoginPage) {
+      response.headers.set("Cache-Control", "private, no-store");
+      return response;
+    }
 
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = LOGIN_PATH;
     loginUrl.search = "";
-    return copyCookies(response, NextResponse.redirect(loginUrl));
+    const redirectResponse = copyCookies(response, NextResponse.redirect(loginUrl));
+    redirectResponse.headers.set("Cache-Control", "private, no-store");
+    return redirectResponse;
   }
 
   const { data: staffProfile, error: profileError } = await supabase
@@ -66,16 +75,21 @@ export async function middleware(request: NextRequest) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = LOGIN_PATH;
     loginUrl.search = "";
-    return copyCookies(response, NextResponse.redirect(loginUrl));
+    const redirectResponse = copyCookies(response, NextResponse.redirect(loginUrl));
+    redirectResponse.headers.set("Cache-Control", "private, no-store");
+    return redirectResponse;
   }
 
   if (isLoginPage) {
     const homeUrl = request.nextUrl.clone();
     homeUrl.pathname = "/";
     homeUrl.search = "";
-    return copyCookies(response, NextResponse.redirect(homeUrl));
+    const redirectResponse = copyCookies(response, NextResponse.redirect(homeUrl));
+    redirectResponse.headers.set("Cache-Control", "private, no-store");
+    return redirectResponse;
   }
 
+  response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
 
