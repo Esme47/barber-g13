@@ -2,6 +2,9 @@ name: Phase 2E.10 regularization patch
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/phase-2e-10-regularization.yml'
 
 jobs:
   patch:
@@ -16,36 +19,21 @@ jobs:
           from pathlib import Path
           p=Path('app/page.tsx')
           s=p.read_text()
-
           s=s.replace('type Transaction = { id:number; concept:string; category:string; amount:number; type:TransactionType; paymentMethod:PaymentMethod; time:string; date:string; };', 'type Transaction = { id:number; concept:string; category:string; amount:number; type:TransactionType; paymentMethod:PaymentMethod; time:string; date:string; appointmentId?:string|null; };\ntype HistoricalAppointment = { id:string; date:string; time:string; name:string; service:string; serviceId:string; barber:string; price:number; };')
-
           s=s.replace('[showAppointmentModal,setShowAppointmentModal]=useState(false),[showClientModal,setShowClientModal]=useState(false),[showServiceModal,setShowServiceModal]=useState(false),[showTransactionModal,setShowTransactionModal]=useState(false),[showPaymentModal,setShowPaymentModal]=useState(false),[paymentAppointment,setPaymentAppointment]=useState<Appointment|null>(null),[paymentMethod,setPaymentMethod]=useState<PaymentMethod>("Efectivo"),', '[showAppointmentModal,setShowAppointmentModal]=useState(false),[showClientModal,setShowClientModal]=useState(false),[showServiceModal,setShowServiceModal]=useState(false),[showTransactionModal,setShowTransactionModal]=useState(false),[showRegularizationModal,setShowRegularizationModal]=useState(false),[showPaymentModal,setShowPaymentModal]=useState(false),[paymentAppointment,setPaymentAppointment]=useState<Appointment|null>(null),[regularizationAppointment,setRegularizationAppointment]=useState<HistoricalAppointment|null>(null),[regularizationAmount,setRegularizationAmount]=useState("") ,[regularizationPaymentMethod,setRegularizationPaymentMethod]=useState<PaymentMethod>("Efectivo"),[paymentMethod,setPaymentMethod]=useState<PaymentMethod>("Efectivo"),')
-
           s=s.replace('[selectedDate,setSelectedDate]=useState(new Date());', '[selectedDate,setSelectedDate]=useState(new Date()),[historicalAppointments,setHistoricalAppointments]=useState<HistoricalAppointment[]>([]);')
-
           s=s.replace('const clientsQuery=supabase.from("customer_profiles").select("id,full_name,phone,email,created_at,visits,last_service,last_visit,next_appointment").order("created_at",{ascending:false}),servicesQuery=', 'const clientsQuery=supabase.from("customer_profiles").select("id,full_name,phone,email,created_at,visits,last_service,last_visit,next_appointment").order("created_at",{ascending:false}),historicalAppointmentsQuery=isAdmin?supabase.from("appointments").select(`id, starts_at, status, customer_id, service_id, barber_id, customers(full_name), services(name,price), barbers(name)`).eq("status","completed").order("starts_at",{ascending:false}):null,servicesQuery=')
-
           s=s.replace('const [clientsRes,servicesRes,barbersRes,appointmentsRes]=await Promise.all([clientsQuery,servicesQuery,barbersQuery,appointmentsQuery]);if(clientsRes.error)', 'const [clientsRes,historicalAppointmentsRes,servicesRes,barbersRes,appointmentsRes]=await Promise.all([clientsQuery,historicalAppointmentsQuery||Promise.resolve({data:[],error:null}),servicesQuery,barbersQuery,appointmentsQuery]);if(clientsRes.error)')
-
           s=s.replace('if(servicesRes.error)throw servicesRes.error;if(barbersRes.error)', 'if(historicalAppointmentsRes.error)throw historicalAppointmentsRes.error;if(servicesRes.error)throw servicesRes.error;if(barbersRes.error)')
-
           s=s.replace('setTransactions(transactionsData.map((t:any)=>({id:Number(t.id),concept:t.concept,category:t.category,amount:Number(t.amount),type:t.type,paymentMethod:t.payment_method,time:String(t.transaction_time||"").slice(0,5),date:String(t.transaction_date||"")})));setBarbers(', 'setTransactions(transactionsData.map((t:any)=>({id:Number(t.id),concept:t.concept,category:t.category,amount:Number(t.amount),type:t.type,paymentMethod:t.payment_method,time:String(t.transaction_time||"").slice(0,5),date:String(t.transaction_date||""),appointmentId:t.appointment_id||null})));setHistoricalAppointments((historicalAppointmentsRes.data||[]).map((a:any)=>{const customer=Array.isArray(a.customers)?a.customers[0]:a.customers,service=Array.isArray(a.services)?a.services[0]:a.services,barber=Array.isArray(a.barbers)?a.barbers[0]:a.barbers;const starts=new Date(a.starts_at);return{id:a.id,date:dateKey(starts),time:starts.toLocaleTimeString("es-CO",{hour:"2-digit",minute:"2-digit",hour12:false}),name:customer?.full_name||"Cliente",service:service?.name||"Servicio",serviceId:a.service_id,barber:barber?.name||"Barbero",price:Number(service?.price||0)};}));setBarbers(')
-
           s=s.replace('const paymentSummary=useMemo(()=>{', 'const regularizableAppointments=useMemo(()=>historicalAppointments.filter(a=>!transactions.some(t=>t.type==="Ingreso"&&t.appointmentId===a.id)),[historicalAppointments,transactions]);\n const paymentSummary=useMemo(()=>{')
-
           s=s.replace('const handleCompleteAppointmentWithPayment=async()=>{', 'const handleRegularizeHistoricalIncome=async()=>{if(!isAdmin||!regularizationAppointment)return;const amount=Number(regularizationAmount);if(!Number.isFinite(amount)||amount<=0)return alert("Ingresa un valor mayor que cero.");setSaving(true);try{const {error}=await supabase.rpc("link_historical_income_to_appointment",{p_appointment_id:regularizationAppointment.id,p_amount:amount,p_payment_method:regularizationPaymentMethod});if(error)throw error;setShowRegularizationModal(false);setRegularizationAppointment(null);setRegularizationAmount("");setRegularizationPaymentMethod("Efectivo");await loadData();}catch(err:any){alert("No fue posible regularizar el ingreso: "+(err?.message||"Error desconocido"));}finally{setSaving(false);}};\n const handleCompleteAppointmentWithPayment=async()=>{')
-
           s=s.replace('<button className="primary-button" onClick={()=>setShowTransactionModal(true)}><Icon.Plus/>Nuevo movimiento</button>', '<div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}><button className="primary-button" onClick={()=>setShowRegularizationModal(true)} disabled={regularizableAppointments.length===0}>Vincular ingreso a cita</button><button className="primary-button" onClick={()=>setShowTransactionModal(true)}><Icon.Plus/>Nuevo movimiento</button></div>')
-
           s=s.replace('{isAdmin&&showTransactionModal&&<div className="modal-overlay">', '{isAdmin&&showRegularizationModal&&<div className="modal-overlay"><div className="reservation-modal small-modal"><div className="modal-header"><div><p className="section-label">REGULARIZACIÓN HISTÓRICA</p><h2>Vincular ingreso a cita</h2></div><button className="close-button" onClick={()=>{setShowRegularizationModal(false);setRegularizationAppointment(null)}}><Icon.Close/></button></div><div className="form-grid"><label className="full-width">Cita completada<select value={regularizationAppointment?.id||""} onChange={e=>{const selected=regularizableAppointments.find(a=>a.id===e.target.value)||null;setRegularizationAppointment(selected);setRegularizationAmount(selected?String(selected.price):"");}}><option value="">Selecciona una cita...</option>{regularizableAppointments.map(a=><option key={a.id} value={a.id}>{a.date} · {a.time} · {a.name} · {a.service}</option>)}</select></label>{regularizationAppointment&&<><div className="full-width"><span className="section-label">DETALLE</span><strong>{regularizationAppointment.name}</strong><small style={{display:"block"}}>{regularizationAppointment.service} · {regularizationAppointment.barber} · Precio vigente {formatCurrency(regularizationAppointment.price)}</small></div><label>Valor realmente pagado (COP)<input type="number" min="0.01" step="0.01" value={regularizationAmount} onChange={e=>setRegularizationAmount(e.target.value)}/></label><label>Método de pago<select value={regularizationPaymentMethod} onChange={e=>setRegularizationPaymentMethod(e.target.value as PaymentMethod)}><option>Efectivo</option><option>Nequi</option><option>Transferencia</option><option>Tarjeta</option></select></label></>}</div><p className="welcome-text" style={{marginTop:16}}>Esta operación no modifica la cita. Solo registra el ingreso histórico y lo vincula a la cita completada para mantener la trazabilidad.</p><div className="modal-actions"><button type="button" className="cancel-button" onClick={()=>{setShowRegularizationModal(false);setRegularizationAppointment(null)}}>Cancelar</button><button type="button" className="primary-button" disabled={saving||!regularizationAppointment} onClick={handleRegularizeHistoricalIncome}>{saving?"Registrando...":"Registrar ingreso y vincular cita"}</button></div></div></div>}{isAdmin&&showTransactionModal&&<div className="modal-overlay">')
-
           p.write_text(s)
-          print('patched', len(s))
-
       - name: Validate
         run: |
           git diff --check
-          git diff -- app/page.tsx
       - name: Commit
         run: |
           git config user.name 'github-actions[bot]'
