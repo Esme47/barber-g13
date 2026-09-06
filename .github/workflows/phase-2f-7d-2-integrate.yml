@@ -1,0 +1,54 @@
+name: phase-2f-7d-2-integrate
+
+on:
+  push:
+    branches:
+      - phase-2f-7d-data-layer
+    paths:
+      - '.github/workflows/phase-2f-7d-2-integrate.yml'
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: phase-2f-7d-data-layer
+          fetch-depth: 1
+
+      - name: Integrate data layer into page
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path('app/page.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          if 'loadBarberG13Data' in text:
+              raise SystemExit('data layer already integrated')
+
+          import_anchor = 'import { Sidebar, Topbar } from "@/components/barber-g13/layout";'
+          if import_anchor not in text:
+              raise SystemExit('import anchor not found')
+          text = text.replace(import_anchor, import_anchor + '\nimport { loadBarberG13Data } from "@/components/barber-g13/data";')
+
+          pattern = re.compile(r' const loadData=useCallback\(async\(\)=>\{.*?\},\[authContext,selectedDate,isAdmin\]\);\n', re.S)
+          replacement = ''' const loadData=useCallback(async()=>{if(!authContext)return;setLoading(true);setError("");try{const data=await loadBarberG13Data(authContext,selectedDate);setClients(data.clients);setServices(data.services);setTransactions(data.transactions);setHistoricalAppointments(data.historicalAppointments);setBarbers(data.barbers);setAppointments(data.appointments);}catch(err:any){console.error("Error cargando Supabase:",err);setError(err?.message||"No fue posible cargar los datos desde Supabase.");}finally{setLoading(false);}},[authContext,selectedDate]);\n'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'loadData replacement count={count}')
+
+          path.write_text(text, encoding='utf-8')
+
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx
+          git diff --cached --check
+          git diff --cached -- app/page.tsx
+          git commit -m "refactor(frontend): integrate Barber G13 data layer [skip ci]"
+          git push origin phase-2f-7d-data-layer
