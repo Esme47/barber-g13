@@ -25,3 +25,20 @@ export const generateHourSlots = (opensAt:string, closesAt:string):string[] => {
   for (let h = openHour; h < closeHour; h++) slots.push(`${String(h).padStart(2,"0")}:00`);
   return slots;
 };
+
+// Converts an "HH:MM" time string into minutes since midnight. Used to check
+// whether an hour slot in the agenda timeline overlaps with an appointment
+// that started earlier but, given its real duration, is still running.
+export const timeToMinutes = (time:string):number => {
+  const [h,m] = time.split(":").map(Number);
+  return (h||0)*60 + (m||0);
+};
+
+// Buckets an appointment's duration into a coarse visual category, so the
+// agenda timeline can give a quick visual sense of how long a booking runs
+// (short/medium/long) without the user having to read the exact minutes.
+export const durationBucket = (duration:number):"short"|"medium"|"long" => {
+  if (duration <= 30) return "short";
+  if (duration <= 60) return "medium";
+  return "long";
+};

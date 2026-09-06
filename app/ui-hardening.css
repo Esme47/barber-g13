@@ -179,6 +179,43 @@ button:disabled {
   background: #171512;
 }
 
+/* Agenda 2.0: an hour slot occupied by a still-running earlier appointment
+   (based on its real duration), shown instead of the "+ Horario disponible"
+   button so the agenda doesn't invite a booking attempt that would fail. */
+.slot-occupied {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px dashed #4a3a20;
+  background: #14120d;
+  color: #8a7550;
+  border-radius: 9px;
+  padding: 12px;
+  font-size: 11px;
+}
+
+/* Agenda 2.0: quick visual cue for how long a booking runs. */
+.duration-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #232327;
+  font-weight: 600;
+}
+
+.duration-tag.duration-short { color: #8fd19e; }
+.duration-tag.duration-medium { color: var(--gold-light); }
+.duration-tag.duration-long { color: #e58a8a; }
+
+/* Agenda 2.0: barber filter dropdown in the agenda toolbar (admin only). */
+.barber-filter {
+  min-width: 180px;
+}
+
+@media (max-width: 720px) {
+  .barber-filter { width: 100%; }
+}
+
 .appointment-card {
   width: 100%;
   min-width: 0;
