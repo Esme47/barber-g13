@@ -39,12 +39,6 @@ export type SaveTransactionInput = {
   time: string;
 };
 
-function assertAdmin(authContext?: AuthContext | null) {
-  if (authContext && authContext.role !== "admin") {
-    throw new Error("Esta acción requiere permisos de administrador.");
-  }
-}
-
 function assertValidPaymentMethod(paymentMethod: PaymentMethod) {
   if (!["Efectivo", "Nequi", "Transferencia", "Tarjeta"].includes(paymentMethod)) {
     throw new Error("Método de pago no válido.");
