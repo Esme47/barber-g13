@@ -45,6 +45,11 @@ function assertValidPaymentMethod(paymentMethod: PaymentMethod) {
   }
 }
 
+// Postgres error codes we want to translate into friendly, actionable
+// messages instead of surfacing raw database text to the user.
+const PG_EXCLUSION_VIOLATION = "23P01"; // overlapping appointment for the same barber
+const PG_UNIQUE_VIOLATION = "23505"; // duplicate phone, etc.
+
 export async function createAppointment(authContext: AuthContext, input: CreateAppointmentInput) {
   const effectiveBarberId = authContext.role === "barber" ? authContext.barberId : input.barberId;
   const normalizedPhone = normalizePhone(input.phone);
@@ -101,7 +106,18 @@ export async function createAppointment(authContext: AuthContext, input: CreateA
     notes: input.notes.trim() || null,
   });
 
-  if (error) throw error;
+  if (error) {
+    // The database itself is the source of truth for overlap prevention
+    // (a GIST exclusion constraint on barber_id + time range). Two people
+    // booking the same slot at the same time will race here — this turns
+    // that database rejection into a message the user can act on.
+    if (error.code === PG_EXCLUSION_VIOLATION) {
+      throw new Error(
+        "Ese horario ya no está disponible: se cruza con otra cita de este barbero. Elige otra hora o actualiza la agenda."
+      );
+    }
+    throw error;
+  }
 }
 
 export async function saveClient(input: SaveClientInput) {
@@ -123,12 +139,18 @@ export async function saveClient(input: SaveClientInput) {
       .from("customers")
       .update({ full_name: name, phone, email })
       .eq("id", input.id);
-    if (error) throw error;
+    if (error) {
+      if (error.code === PG_UNIQUE_VIOLATION) throw new Error("Ya existe otro cliente con ese teléfono.");
+      throw error;
+    }
     return;
   }
 
   const { error } = await supabase.from("customers").insert({ full_name: name, phone, email });
-  if (error) throw error;
+  if (error) {
+    if (error.code === PG_UNIQUE_VIOLATION) throw new Error("Ya existe otro cliente con ese teléfono.");
+    throw error;
+  }
 }
 
 export async function saveService(input: SaveServiceInput) {
