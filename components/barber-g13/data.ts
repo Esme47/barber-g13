@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { AuthContext } from "@/lib/auth";
-import type { Appointment, Barber, Client, HistoricalAppointment, Service, Transaction } from "./types";
+import type { Appointment, Barber, BusinessHours, Client, HistoricalAppointment, Service, Transaction } from "./types";
 import { dateKey, dbToUiStatus, formatRegisteredDate } from "./utils";
 
 type CustomerProfileRow = {
@@ -27,6 +27,13 @@ type ServiceRow = {
 type BarberRow = {
   id: string;
   name: string;
+  active: boolean;
+};
+
+type BusinessHoursRow = {
+  weekday: number;
+  opens_at: string;
+  closes_at: string;
   active: boolean;
 };
 
@@ -83,6 +90,7 @@ export async function loadBarberG13Data(
   appointments: Appointment[];
   transactions: Transaction[];
   historicalAppointments: HistoricalAppointment[];
+  businessHours: BusinessHours[];
 }> {
   const isAdmin = authContext.role === "admin";
   const dayStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
@@ -94,12 +102,14 @@ export async function loadBarberG13Data(
   const barbersQuery = supabase.from("barbers").select("*").eq("active", true).order("name");
   const appointmentsQuery = supabase.from("appointments").select(`id, starts_at, ends_at, status, notes, customer_id, barber_id, service_id, customers(full_name,phone), services(name,duration_minutes), barbers(name)`).gte("starts_at", dayStart.toISOString()).lt("starts_at", nextDayStart.toISOString()).order("starts_at", { ascending: true });
   const transactionsQuery = isAdmin ? supabase.from("transactions").select("*").order("transaction_date", { ascending: false }).order("transaction_time", { ascending: false }).order("id", { ascending: false }) : null;
-  const [clientsRes, historicalRes, servicesRes, barbersRes, appointmentsRes] = await Promise.all([clientsQuery, historicalQuery || Promise.resolve({ data: [], error: null }), servicesQuery, barbersQuery, appointmentsQuery]);
+  const businessHoursQuery = supabase.from("business_hours").select("weekday,opens_at,closes_at,active").order("weekday", { ascending: true });
+  const [clientsRes, historicalRes, servicesRes, barbersRes, appointmentsRes, businessHoursRes] = await Promise.all([clientsQuery, historicalQuery || Promise.resolve({ data: [], error: null }), servicesQuery, barbersQuery, appointmentsQuery, businessHoursQuery]);
   if (clientsRes.error) throw clientsRes.error;
   if (historicalRes.error) throw historicalRes.error;
   if (servicesRes.error) throw servicesRes.error;
   if (barbersRes.error) throw barbersRes.error;
   if (appointmentsRes.error) throw appointmentsRes.error;
+  if (businessHoursRes.error) throw businessHoursRes.error;
 
   let transactionsData: TransactionRow[] = [];
   if (transactionsQuery) {
@@ -134,6 +144,11 @@ export async function loadBarberG13Data(
     return { id: row.id, name: row.name, active: row.active };
   });
 
+  const businessHours = (businessHoursRes.data || []).map((value) => {
+    const row = value as unknown as BusinessHoursRow;
+    return { weekday: Number(row.weekday), opensAt: row.opens_at, closesAt: row.closes_at, active: Boolean(row.active) };
+  });
+
   const appointments = (appointmentsRes.data || []).map((value) => {
     const a = value as unknown as AppointmentRow;
     const starts = new Date(a.starts_at);
@@ -144,5 +159,5 @@ export async function loadBarberG13Data(
     return { id: a.id, time: starts.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false }), date: day, name: customer?.full_name || "Cliente", phone: customer?.phone || "", service: service?.name || "Servicio", serviceId: a.service_id, barber: barber?.name || "Barbero", barberId: a.barber_id, customerId: a.customer_id, duration: Math.max(15, Math.round((ends.getTime() - starts.getTime()) / 60000)), status: dbToUiStatus(a.status), notes: a.notes || "" };
   });
 
-  return { clients, services, barbers, appointments, transactions, historicalAppointments };
+  return { clients, services, barbers, appointments, transactions, historicalAppointments, businessHours };
 }
