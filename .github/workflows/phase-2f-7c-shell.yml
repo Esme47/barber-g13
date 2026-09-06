@@ -1,0 +1,94 @@
+name: Phase 2F.7C Shell Extraction
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract-shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Extract sidebar and topbar from current page
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          page = Path('app/page.tsx')
+          text = page.read_text(encoding='utf-8')
+
+          aside_start = text.index('<aside className={`sidebar')
+          aside_end = text.index('</aside>', aside_start) + len('</aside>')
+          aside = text[aside_start:aside_end]
+
+          header_start = text.index('<header className="topbar">')
+          header_end = text.index('</header>', header_start) + len('</header>')
+          header = text[header_start:header_end]
+
+          def componentize(snippet, replacements):
+              out = snippet
+              for old, new in replacements:
+                  out = out.replace(old, new)
+              return out
+
+          sidebar_body = componentize(aside, [
+              ('menuOpen', 'open'),
+              ('setMenuOpen', 'onClose'),
+              ('menu.map', 'menu.map'),
+              ('setActive', 'onNavigate'),
+              ('active', 'active'),
+              ('staffName', 'staffName'),
+              ('staffRole', 'staffRole'),
+              ('getInitials', 'getInitials'),
+              ('signOut', 'onLogout'),
+              ('router.replace("/login")', 'onLogout()'),
+          ])
+          sidebar_body = sidebar_body.replace('onClick={async()=>{await onLogout();onLogout()}}', 'onClick={onLogout}')
+          sidebar_body = sidebar_body.replace('onClick={()=>setMenuOpen(false)}', 'onClick={onClose}')
+          sidebar_body = sidebar_body.replace('onClick={()=>setActive(item.name);setMenuOpen(false)}', 'onClick={()=>{onNavigate(item.name);onClose();}}')
+
+          header_body = componentize(header, [
+              ('setMenuOpen', 'onOpenMenu'),
+              ('menuOpen', 'menuOpen'),
+              ('active', 'active'),
+              ('staffRole', 'staffRole'),
+              ('getInitials', 'getInitials'),
+          ])
+
+          sidebar_file = '''import type { ReactNode } from "react";\nimport { getInitials } from "./ui";\n\nexport type NavigationItem = { name: string; icon: ReactNode };\n\ntype SidebarProps = {\n  menu: NavigationItem[];\n  menuOpen: boolean;\n  active: string;\n  staffName: string;\n  staffRole: string;\n  onClose: () => void;\n  onNavigate: (name: string) => void;\n  onLogout: () => void;\n};\n\nexport function Sidebar({ menu, menuOpen, active, staffName, staffRole, onClose, onNavigate, onLogout }: SidebarProps) {\n  return ''' + sidebar_body + ''';\n}\n\ntype TopbarProps = {\n  active: string;\n  staffRole: string;\n  menuOpen: boolean;\n  onOpenMenu: () => void;\n};\n\nexport function Topbar({ active, staffRole, menuOpen, onOpenMenu }: TopbarProps) {\n  return ''' + header_body + ''';\n}\n'''
+
+          Path('components/barber-g13/layout.tsx').write_text(sidebar_file, encoding='utf-8')
+
+          text = text[:aside_start] + '<Sidebar menu={menu} menuOpen={menuOpen} active={active} staffName={staffName} staffRole={staffRole} onClose={()=>setMenuOpen(false)} onNavigate={setActive} onLogout={async()=>{await signOut();router.replace("/login")}} />' + text[aside_end:]
+          # Header indexes must be recomputed after sidebar replacement.
+          header_start = text.index('<header className="topbar">')
+          header_end = text.index('</header>', header_start) + len('</header>')
+          text = text[:header_start] + '<Topbar active={active} staffRole={staffRole} menuOpen={menuOpen} onOpenMenu={()=>setMenuOpen(true)} />' + text[header_end:]
+
+          text = text.replace('import { Icon, hours, getInitials, formatCurrency, formatDate } from "@/components/barber-g13/ui";', 'import { Icon, hours, formatCurrency, formatDate } from "@/components/barber-g13/ui";\nimport { Sidebar, Topbar } from "@/components/barber-g13/layout";')
+          page.write_text(text, encoding='utf-8')
+
+          print('sidebar chars:', len(aside), 'header chars:', len(header))
+
+      - name: Validate extraction
+        run: |
+          test -s components/barber-g13/layout.tsx
+          grep -q 'Sidebar' app/page.tsx
+          grep -q 'Topbar' app/page.tsx
+          ! grep -q '<aside className={`sidebar' app/page.tsx
+          ! grep -q '<header className="topbar">' app/page.tsx
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx components/barber-g13/layout.tsx
+          git commit -m "refactor(frontend): extract Barber G13 shell UI" || exit 0
+          git push origin main
