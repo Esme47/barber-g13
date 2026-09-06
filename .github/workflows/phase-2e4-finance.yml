@@ -1,6 +1,8 @@
 name: Phase 2E.4 Finance
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -8,6 +10,7 @@ permissions:
 
 jobs:
   finance:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,36 +21,26 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
           p = Path('app/page.tsx')
           s = p.read_text()
-
           old = 'const financialSummary=useMemo(()=>{const sales=transactions.filter(t=>t.type==="Ingreso").reduce((a,t)=>a+t.amount,0),expenses=transactions.filter(t=>t.type==="Gasto").reduce((a,t)=>a+t.amount,0);return{sales,expenses,profit:sales-expenses,servicesCompleted:transactions.filter(t=>t.type==="Ingreso").length};},[transactions]);'
           new = '''const financialSummary=useMemo(()=>{const sales=transactions.filter(t=>t.type==="Ingreso").reduce((a,t)=>a+t.amount,0),expenses=transactions.filter(t=>t.type==="Gasto").reduce((a,t)=>a+t.amount,0);return{sales,expenses,profit:sales-expenses,servicesCompleted:transactions.filter(t=>t.type==="Ingreso").length};},[transactions]);
           const financialPeriods=useMemo(()=>{const now=new Date(),today=dateKey(now),weekStart=new Date(now);weekStart.setHours(0,0,0,0);const day=weekStart.getDay()||7;weekStart.setDate(weekStart.getDate()-day+1);const weekStartKey=dateKey(weekStart),monthKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;const build=(items:Transaction[])=>{const income=items.filter(t=>t.type==="Ingreso").reduce((a,t)=>a+t.amount,0),expense=items.filter(t=>t.type==="Gasto").reduce((a,t)=>a+t.amount,0);return{income,expense,profit:income-expense};};return{today:build(transactions.filter(t=>t.date===today)),week:build(transactions.filter(t=>t.date>=weekStartKey&&t.date<=today)),month:build(transactions.filter(t=>t.date.startsWith(monthKey))),total:build(transactions)};},[transactions]);
           const financialInsights=useMemo(()=>{const incomeTransactions=transactions.filter(t=>t.type==="Ingreso"),income=financialSummary.sales,margin=income>0?(financialSummary.profit/income)*100:0,average=incomeTransactions.length?income/incomeTransactions.length:0;return{margin,average,movements:transactions.length};},[transactions,financialSummary]);'''
-          if old not in s:
-              raise SystemExit('financialSummary target not found; refusing to modify.')
-          s = s.replace(old, new, 1)
-
-          old_dash = '<div className="chart-total"><span>Ingresos</span><strong>{formatCurrency(financialSummary.sales)}</strong></div><div className="chart-total"><span>Gastos</span><strong>{formatCurrency(financialSummary.expenses)}</strong></div><div className="chart-total"><span>Utilidad neta</span><strong>{formatCurrency(financialSummary.profit)}</strong></div>'
-          new_dash = '<div className="chart-total"><span>Ingresos acumulados</span><strong>{formatCurrency(financialSummary.sales)}</strong></div><div className="chart-total"><span>Gastos acumulados</span><strong>{formatCurrency(financialSummary.expenses)}</strong></div><div className="chart-total"><span>Utilidad neta</span><strong>{formatCurrency(financialSummary.profit)}</strong></div><div className="chart-total"><span>Margen de utilidad</span><strong>{financialInsights.margin.toFixed(1)}%</strong></div>'
-          if old_dash not in s:
-              raise SystemExit('dashboard finance target not found; refusing to modify.')
-          s = s.replace(old_dash, new_dash, 1)
-
-          old_fin = '<div className="chart-total"><span>Total ingresos</span><strong>{formatCurrency(financialSummary.sales)}</strong></div><div className="chart-total"><span>Total gastos</span><strong>{formatCurrency(financialSummary.expenses)}</strong></div><div className="chart-total"><span>Disponible / utilidad</span><strong>{formatCurrency(financialSummary.profit)}</strong></div>'
-          new_fin = '<div className="chart-total"><span>Total histórico</span><strong>{formatCurrency(financialSummary.sales)}</strong></div><div className="chart-total"><span>Utilidad histórica</span><strong>{formatCurrency(financialSummary.profit)}</strong></div><div className="chart-total"><span>Margen histórico</span><strong>{financialInsights.margin.toFixed(1)}%</strong></div>'
-          if old_fin not in s:
-              raise SystemExit('finance balance target not found; refusing to modify.')
-          s = s.replace(old_fin, new_fin, 1)
-
-          anchor = '<section className="dashboard-grid"><article className="panel"><div className="panel-header"><div><p className="section-label">MÉTODOS DE PAGO</p><h2>Ingresos por canal</h2></div></div>'
-          replacement = '<div className="stats-grid" style={{marginBottom:24}}><article className="stat-card"><div className="stat-header"><span>HOY</span><Icon.Calendar/></div><h2>{formatCurrency(financialPeriods.today.income)}</h2><p>Utilidad {formatCurrency(financialPeriods.today.profit)}</p></article><article className="stat-card"><div className="stat-header"><span>ESTA SEMANA</span><Icon.Calendar/></div><h2>{formatCurrency(financialPeriods.week.income)}</h2><p>Utilidad {formatCurrency(financialPeriods.week.profit)}</p></article><article className="stat-card"><div className="stat-header"><span>ESTE MES</span><Icon.Calendar/></div><h2>{formatCurrency(financialPeriods.month.income)}</h2><p>Utilidad {formatCurrency(financialPeriods.month.profit)}</p></article><article className="stat-card gold-card"><div className="stat-header"><span>TICKET PROMEDIO</span><Icon.Wallet/></div><h2>{formatCurrency(financialInsights.average)}</h2><p>{financialInsights.movements} movimientos</p></article></div>'+anchor
-          if anchor not in s:
-              raise SystemExit('finance period insertion target not found; refusing to modify.')
-          s = s.replace(anchor, replacement, 1)
-
+          if old not in s: raise SystemExit('financialSummary target not found; refusing to modify.')
+          s=s.replace(old,new,1)
+          old_dash='<div className="chart-total"><span>Ingresos</span><strong>{formatCurrency(financialSummary.sales)}</strong></div><div className="chart-total"><span>Gastos</span><strong>{formatCurrency(financialSummary.expenses)}</strong></div><div className="chart-total"><span>Utilidad neta</span><strong>{formatCurrency(financialSummary.profit)}</strong></div>'
+          new_dash='<div className="chart-total"><span>Ingresos acumulados</span><strong>{formatCurrency(financialSummary.sales)}</strong></div><div className="chart-total"><span>Gastos acumulados</span><strong>{formatCurrency(financialSummary.expenses)}</strong></div><div className="chart-total"><span>Utilidad neta</span><strong>{formatCurrency(financialSummary.profit)}</strong></div><div className="chart-total"><span>Margen de utilidad</span><strong>{financialInsights.margin.toFixed(1)}%</strong></div>'
+          if old_dash not in s: raise SystemExit('dashboard finance target not found; refusing to modify.')
+          s=s.replace(old_dash,new_dash,1)
+          old_fin='<div className="chart-total"><span>Total ingresos</span><strong>{formatCurrency(financialSummary.sales)}</strong></div><div className="chart-total"><span>Total gastos</span><strong>{formatCurrency(financialSummary.expenses)}</strong></div><div className="chart-total"><span>Disponible / utilidad</span><strong>{formatCurrency(financialSummary.profit)}</strong></div>'
+          new_fin='<div className="chart-total"><span>Total histórico</span><strong>{formatCurrency(financialSummary.sales)}</strong></div><div className="chart-total"><span>Utilidad histórica</span><strong>{formatCurrency(financialSummary.profit)}</strong></div><div className="chart-total"><span>Margen histórico</span><strong>{financialInsights.margin.toFixed(1)}%</strong></div>'
+          if old_fin not in s: raise SystemExit('finance balance target not found; refusing to modify.')
+          s=s.replace(old_fin,new_fin,1)
+          anchor='<section className="dashboard-grid"><article className="panel"><div className="panel-header"><div><p className="section-label">MÉTODOS DE PAGO</p><h2>Ingresos por canal</h2></div></div>'
+          replacement='<div className="stats-grid" style={{marginBottom:24}}><article className="stat-card"><div className="stat-header"><span>HOY</span><Icon.Calendar/></div><h2>{formatCurrency(financialPeriods.today.income)}</h2><p>Utilidad {formatCurrency(financialPeriods.today.profit)}</p></article><article className="stat-card"><div className="stat-header"><span>ESTA SEMANA</span><Icon.Calendar/></div><h2>{formatCurrency(financialPeriods.week.income)}</h2><p>Utilidad {formatCurrency(financialPeriods.week.profit)}</p></article><article className="stat-card"><div className="stat-header"><span>ESTE MES</span><Icon.Calendar/></div><h2>{formatCurrency(financialPeriods.month.income)}</h2><p>Utilidad {formatCurrency(financialPeriods.month.profit)}</p></article><article className="stat-card gold-card"><div className="stat-header"><span>TICKET PROMEDIO</span><Icon.Wallet/></div><h2>{formatCurrency(financialInsights.average)}</h2><p>{financialInsights.movements} movimientos</p></article></div>'+anchor
+          if anchor not in s: raise SystemExit('finance period insertion target not found; refusing to modify.')
+          s=s.replace(anchor,replacement,1)
           p.write_text(s)
           PY
       - name: Commit
