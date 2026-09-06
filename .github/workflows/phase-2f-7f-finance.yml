@@ -1,0 +1,35 @@
+name: phase-2f-7f-finance
+on:
+  push:
+    branches: [phase-2f-7d-data-layer]
+jobs:
+  restore-finance-close:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore complete daily close metrics
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('app/page.tsx')
+          s = p.read_text()
+          old = 'const closeDate=dateKey(new Date()),closeTransactions=transactions.filter(t=>t.date===closeDate),closeIncome=closeTransactions.filter(t=>t.type==="Ingreso").reduce((a,t)=>a+t.amount,0),closeExpenses=closeTransactions.filter(t=>t.type==="Gasto").reduce((a,t)=>a+t.amount,0),closeProfit=closeIncome-closeExpenses,closeAppointments=historicalAppointments.filter(a=>a.date===closeDate),closeAppointmentsWithoutIncome=closeAppointments.filter(a=>!closeTransactions.some(t=>t.type==="Ingreso"&&t.appointmentId===a.id)),closeReady=closeAppointmentsWithoutIncome.length===0;'
+          new = 'const closeDate=dateKey(new Date()),closeTransactions=transactions.filter(t=>t.date===closeDate),closeIncome=closeTransactions.filter(t=>t.type==="Ingreso").reduce((a,t)=>a+t.amount,0),closeExpenses=closeTransactions.filter(t=>t.type==="Gasto").reduce((a,t)=>a+t.amount,0),closeProfit=closeIncome-closeExpenses,closeLinked=closeTransactions.filter(t=>t.type==="Ingreso"&&t.appointmentId).length,closeHistorical=closeTransactions.filter(t=>t.type==="Ingreso"&&!t.appointmentId).length,closeAppointments=historicalAppointments.filter(a=>a.date===closeDate),closeAppointmentsWithoutIncome=closeAppointments.filter(a=>!closeTransactions.some(t=>t.type==="Ingreso"&&t.appointmentId===a.id)),closeReady=closeAppointmentsWithoutIncome.length===0,closeMethods=paymentSummary.map(item=>({method:item.method,amount:closeTransactions.filter(t=>t.type==="Ingreso"&&t.paymentMethod===item.method).reduce((a,t)=>a+t.amount,0)}));'
+          if old not in s:
+            raise SystemExit('target financial close declaration not found')
+          s=s.replace(old,new,1)
+          old_ui='<div><span>Movimientos</span><strong>{closeTransactions.length}</strong></div></div></article><article className="panel quick-panel"><div className="panel-heading"><div><p className="section-label">AGENDA ↔ FINANZAS</p>'
+          new_ui='<div><span>Movimientos</span><strong>{closeTransactions.length}</strong></div><div><span>Ingresos vinculados</span><strong>{closeLinked}</strong></div><div><span>Ingresos históricos sin cita</span><strong>{closeHistorical}</strong></div></div><div className="finance-list"><div><span>Efectivo</span><strong>{formatCurrency(closeMethods[0].amount)}</strong></div><div><span>Nequi</span><strong>{formatCurrency(closeMethods[1].amount)}</strong></div><div><span>Transferencia</span><strong>{formatCurrency(closeMethods[2].amount)}</strong></div><div><span>Tarjeta</span><strong>{formatCurrency(closeMethods[3].amount)}</strong></div></div></article><article className="panel quick-panel"><div className="panel-heading"><div><p className="section-label">AGENDA ↔ FINANZAS</p>'
+          if old_ui not in s:
+            raise SystemExit('target financial close UI not found')
+          s=s.replace(old_ui,new_ui,1)
+          p.write_text(s)
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx
+          git diff --cached --quiet || git commit -m "fix(finance): restore daily close reconciliation metrics"
+          git push
