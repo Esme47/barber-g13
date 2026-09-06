@@ -18,27 +18,30 @@ jobs:
           fetch-depth: 0
 
       - name: Refactor current page.tsx imports
-        shell: python
+        shell: bash
         run: |
+          python3 <<'PY'
           from pathlib import Path
-          import re
 
           path = Path("app/page.tsx")
           text = path.read_text()
 
-          marker = 'import { getAuthContext, signOut, type AuthContext } from "@/lib/auth";'
-          imports = '''import { getAuthContext, signOut, type AuthContext } from "@/lib/auth";\nimport type { Appointment, AppointmentStatus, Barber, Client, DbAppointmentStatus, HistoricalAppointment, PaymentMethod, Service, Transaction, TransactionType } from "@/components/barber-g13/types";\nimport { dateKey, dbToUiStatus, formatRegisteredDate, formatTransactionDate, normalizePhone, uiToDbStatus } from "@/components/barber-g13/utils";'''
           if 'from "@/components/barber-g13/types"' not in text:
+              marker = 'import { getAuthContext, signOut, type AuthContext } from "@/lib/auth";'
               if marker not in text:
                   raise SystemExit("auth import marker not found; aborting")
+              imports = marker + '\n' + 'import type { Appointment, AppointmentStatus, Barber, Client, DbAppointmentStatus, HistoricalAppointment, PaymentMethod, Service, Transaction, TransactionType } from "@/components/barber-g13/types";' + '\n' + 'import { dateKey, dbToUiStatus, formatRegisteredDate, formatTransactionDate, normalizePhone, uiToDbStatus } from "@/components/barber-g13/utils";'
               text = text.replace(marker, imports, 1)
 
-          pattern = re.compile(r'type AppointmentStatus = .*?const formatTransactionDate=.*?;\n\n(?=const Icon =)', re.S)
-          new_text, count = pattern.subn('', text, count=1)
-          if count != 1:
-              raise SystemExit(f"expected exactly one type/helper block, found {count}")
+          start = text.find('type AppointmentStatus =')
+          end = text.find('const Icon =', start)
+          if start == -1 or end == -1:
+              raise SystemExit(f"could not locate extraction boundaries: start={start}, end={end}")
 
-          path.write_text(new_text)
+          text = text[:start] + text[end:]
+          path.write_text(text)
+          print("Extracted types and shared utilities from the current app/page.tsx")
+          PY
       - name: Commit refactor
         shell: bash
         run: |
