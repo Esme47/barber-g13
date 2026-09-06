@@ -1,14 +1,20 @@
 -- ============================================================================
--- BARBER G13 · CANONICAL SUPABASE SCHEMA
--- Fase 2A.8 · Auditado contra producción
+-- BARBER G13 · CANONICAL SUPABASE SCHEMA (DOCUMENTATION ONLY)
+-- Fase 2B · Auditado y regenerado contra producción
 -- Project: btodlvnnbxyxwhihwlbe
--- Generated from live database structure on 2026-09-05
+-- Regenerated from live database structure on 2026-09-06
 --
 -- IMPORTANT:
--- This is the canonical target schema after the Clients migration.
--- The legacy table public.clients intentionally is NOT included because it is
--- isolated, unused by the application, and scheduled for controlled retirement
--- in Fase 2A.9. No DROP operation is performed by this file.
+-- This file is a DOCUMENTATION SNAPSHOT of the live schema. It is not run
+-- automatically against the database and contains no destructive statements.
+-- It supersedes the previous "Fase 2A.8" version, which predated the staff
+-- login system (staff_profiles, role-based RLS, and the payment RPCs) and
+-- no longer matched production.
+--
+-- Legacy objects intentionally excluded from the app but still present in
+-- the database as historical/backup data (not touched by this file):
+--   * public.clients             (superseded by public.customers)
+--   * public.clients_backup_2a9  (logical safety backup taken 2026-09-05)
 -- ============================================================================
 
 create extension if not exists pgcrypto;
@@ -21,17 +27,19 @@ create extension if not exists btree_gist;
 do $$
 begin
   if not exists (
-    select 1 from pg_type t
-    join pg_namespace n on n.oid = t.typnamespace
+    select 1 from pg_type t join pg_namespace n on n.oid = t.typnamespace
     where t.typname = 'appointment_status' and n.nspname = 'public'
   ) then
     create type public.appointment_status as enum (
-      'pending',
-      'confirmed',
-      'completed',
-      'cancelled',
-      'no_show'
+      'pending','confirmed','completed','cancelled','no_show'
     );
+  end if;
+
+  if not exists (
+    select 1 from pg_type t join pg_namespace n on n.oid = t.typnamespace
+    where t.typname = 'staff_role' and n.nspname = 'public'
+  ) then
+    create type public.staff_role as enum ('admin','barber');
   end if;
 end $$;
 
@@ -63,186 +71,125 @@ create table if not exists public.services (
   created_at timestamptz not null default now(),
   description text not null default '',
   updated_at timestamptz not null default now(),
-  constraint services_duration_minutes_check
-    check (duration_minutes >= 15 and duration_minutes <= 240),
-  constraint services_price_check
-    check (price >= 0)
+  constraint services_duration_minutes_check check (duration_minutes >= 15 and duration_minutes <= 240),
+  constraint services_price_check check (price >= 0)
 );
 
 create table if not exists public.appointments (
   id uuid primary key default gen_random_uuid(),
-  customer_id uuid not null,
-  barber_id uuid not null,
-  service_id uuid not null,
+  customer_id uuid not null references public.customers(id) on delete restrict,
+  barber_id uuid not null references public.barbers(id) on delete restrict,
+  service_id uuid not null references public.services(id) on delete restrict,
   starts_at timestamptz not null,
   ends_at timestamptz not null,
   status public.appointment_status not null default 'pending',
   notes text,
   created_at timestamptz not null default now(),
-
-  constraint appointments_customer_id_fkey
-    foreign key (customer_id)
-    references public.customers(id)
-    on delete restrict,
-
-  constraint appointments_barber_id_fkey
-    foreign key (barber_id)
-    references public.barbers(id)
-    on delete restrict,
-
-  constraint appointments_service_id_fkey
-    foreign key (service_id)
-    references public.services(id)
-    on delete restrict,
-
-  constraint appointments_check
-    check (ends_at > starts_at)
+  constraint appointments_check check (ends_at > starts_at)
 );
 
 create table if not exists public.blocked_times (
   id uuid primary key default gen_random_uuid(),
-  barber_id uuid,
+  barber_id uuid references public.barbers(id) on delete cascade,
   starts_at timestamptz not null,
   ends_at timestamptz not null,
   reason text,
   created_at timestamptz not null default now(),
-
-  constraint blocked_times_barber_id_fkey
-    foreign key (barber_id)
-    references public.barbers(id)
-    on delete cascade,
-
-  constraint blocked_times_check
-    check (ends_at > starts_at)
+  constraint blocked_times_check check (ends_at > starts_at)
 );
 
 create table if not exists public.business_hours (
   id uuid primary key default gen_random_uuid(),
-  weekday integer not null unique,
+  weekday integer not null unique check (weekday >= 0 and weekday <= 6),
   opens_at time not null,
   closes_at time not null,
   active boolean not null default true,
-
-  constraint business_hours_weekday_check
-    check (weekday >= 0 and weekday <= 6),
-
-  constraint business_hours_check
-    check (closes_at > opens_at)
+  constraint business_hours_check check (closes_at > opens_at)
 );
 
 create table if not exists public.transactions (
   id bigint generated by default as identity primary key,
   concept text not null,
   category text not null,
-  amount numeric not null,
-  type text not null,
-  payment_method text not null,
+  amount numeric not null check (amount >= 0),
+  type text not null check (type = any (array['Ingreso','Gasto'])),
+  payment_method text not null check (payment_method = any (array['Efectivo','Nequi','Transferencia','Tarjeta'])),
   transaction_time time not null default current_time,
   transaction_date date not null default current_date,
   created_at timestamptz not null default now(),
+  -- Links an income row back to the appointment it was collected for.
+  -- NULL for expenses and for historical/manual income not tied to a booking.
+  appointment_id uuid references public.appointments(id)
+);
 
-  constraint transactions_amount_check
-    check (amount >= 0),
-
-  constraint transactions_type_check
-    check (type = any (array['Ingreso', 'Gasto'])),
-
-  constraint transactions_payment_method_check
-    check (
-      payment_method = any (
-        array['Efectivo', 'Nequi', 'Transferencia', 'Tarjeta']
-      )
-    )
+-- Staff accounts (admin / barber), one row per authenticated Supabase user
+-- allowed to sign in. A barber row also links to their public.barbers record.
+create table if not exists public.staff_profiles (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references auth.users(id),
+  role public.staff_role not null,
+  barber_id uuid references public.barbers(id),
+  full_name text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
 );
 
 -- ============================================================================
 -- INDEXES
 -- ============================================================================
 
--- Prevents overlapping active/pending appointments for the same barber.
 create index if not exists appointments_no_overlap
-  on public.appointments
-  using gist (
-    barber_id,
-    tstzrange(starts_at, ends_at, '[)')
-  )
-  where status = any (
-    array[
-      'pending'::public.appointment_status,
-      'confirmed'::public.appointment_status
-    ]
-  );
+  on public.appointments using gist (barber_id, tstzrange(starts_at, ends_at, '[)'))
+  where status = any (array['pending'::public.appointment_status,'confirmed'::public.appointment_status]);
 
-create index if not exists transactions_date_idx
-  on public.transactions (transaction_date);
+create index if not exists transactions_date_idx on public.transactions (transaction_date);
 
 -- ============================================================================
 -- CUSTOMER PROFILES · READ MODEL
--- customers is the single source of truth for customer identity.
--- This view derives visits and appointment/service history.
+-- security_invoker=true so this view enforces the RLS of the underlying
+-- tables for whoever queries it (admin sees all, barbers see only customers
+-- they've had appointments with).
 -- ============================================================================
 
-create or replace view public.customer_profiles as
+create or replace view public.customer_profiles
+with (security_invoker = true)
+as
 select
-  c.id,
-  c.full_name,
-  c.phone,
-  c.email,
-  c.created_at,
-
-  count(a.id)
-    filter (where a.status <> 'cancelled'::public.appointment_status)
-    ::integer as visits,
-
+  c.id, c.full_name, c.phone, c.email, c.created_at,
+  count(a.id) filter (where a.status <> 'cancelled'::public.appointment_status)::integer as visits,
   ls.service_name as last_service,
   ls.starts_at as last_visit,
   ns.starts_at as next_appointment
-
 from public.customers c
-
-left join public.appointments a
-  on a.customer_id = c.id
-
+left join public.appointments a on a.customer_id = c.id
 left join lateral (
-  select
-    s.name as service_name,
-    a2.starts_at
+  select s.name as service_name, a2.starts_at
   from public.appointments a2
-  left join public.services s
-    on s.id = a2.service_id
-  where a2.customer_id = c.id
-    and a2.status <> 'cancelled'::public.appointment_status
-    and a2.starts_at <= now()
-  order by a2.starts_at desc
-  limit 1
+  left join public.services s on s.id = a2.service_id
+  where a2.customer_id = c.id and a2.status <> 'cancelled'::public.appointment_status and a2.starts_at <= now()
+  order by a2.starts_at desc limit 1
 ) ls on true
-
 left join lateral (
-  select
-    a3.starts_at
-  from public.appointments a3
-  where a3.customer_id = c.id
-    and a3.status <> 'cancelled'::public.appointment_status
-    and a3.starts_at > now()
-  order by a3.starts_at
-  limit 1
+  select a3.starts_at from public.appointments a3
+  where a3.customer_id = c.id and a3.status <> 'cancelled'::public.appointment_status and a3.starts_at > now()
+  order by a3.starts_at limit 1
 ) ns on true
-
-group by
-  c.id,
-  c.full_name,
-  c.phone,
-  c.email,
-  c.created_at,
-  ls.service_name,
-  ls.starts_at,
-  ns.starts_at;
+group by c.id, c.full_name, c.phone, c.email, c.created_at, ls.service_name, ls.starts_at, ns.starts_at;
 
 -- ============================================================================
--- ROW LEVEL SECURITY
--- Exact policies currently observed in production.
--- NOTE: Some policies overlap intentionally because this section mirrors the
--- current live configuration; security hardening is a separate future phase.
+-- PRIVATE HELPER FUNCTIONS (schema "private", used only inside RLS policies)
+-- ============================================================================
+
+-- private.is_admin() / private.is_barber() / private.current_barber_id() /
+-- private.can_access_customer(uuid) drive every RLS policy below. They all
+-- key off public.staff_profiles for the currently authenticated user
+-- (auth.uid()) and only recognize ACTIVE staff rows.
+--
+-- can_access_customer(p_customer_id) := is_admin()
+--   OR exists an appointment for that customer with this barber's barber_id.
+
+-- ============================================================================
+-- ROW LEVEL SECURITY · exact policies observed in production (2026-09-06)
 -- ============================================================================
 
 alter table public.appointments enable row level security;
@@ -251,108 +198,102 @@ alter table public.blocked_times enable row level security;
 alter table public.business_hours enable row level security;
 alter table public.customers enable row level security;
 alter table public.services enable row level security;
+alter table public.staff_profiles enable row level security;
 alter table public.transactions enable row level security;
 
-drop policy if exists "public appointments access" on public.appointments;
-create policy "public appointments access"
-on public.appointments
-as permissive
-for all
-to public
-using (true)
-with check (true);
+-- appointments: admin full access; barber limited to their own appointments
+create policy "appointments_admin_select" on public.appointments for select to authenticated using ((select private.is_admin()));
+create policy "appointments_admin_insert" on public.appointments for insert to authenticated with check ((select private.is_admin()));
+create policy "appointments_admin_update" on public.appointments for update to authenticated using ((select private.is_admin())) with check ((select private.is_admin()));
+create policy "appointments_barber_select" on public.appointments for select to authenticated using ((select private.is_barber()) and barber_id = (select private.current_barber_id()));
+create policy "appointments_barber_insert" on public.appointments for insert to authenticated with check ((select private.is_barber()) and barber_id = (select private.current_barber_id()));
+create policy "appointments_barber_update" on public.appointments for update to authenticated using ((select private.is_barber()) and barber_id = (select private.current_barber_id())) with check ((select private.is_barber()) and barber_id = (select private.current_barber_id()));
 
-drop policy if exists "public can create appointments" on public.appointments;
-create policy "public can create appointments"
-on public.appointments
-as permissive
-for insert
-to public
-with check (status = 'pending'::public.appointment_status);
+-- barbers: active barbers are publicly readable (booking form); staff see all
+create policy "barbers_public_select_active" on public.barbers for select to public using (active = true);
+create policy "barbers_staff_select_all" on public.barbers for select to authenticated using ((select private.is_admin()) or (select private.is_barber()));
+create policy "barbers_admin_insert" on public.barbers for insert to authenticated with check ((select private.is_admin()));
+create policy "barbers_admin_update" on public.barbers for update to authenticated using ((select private.is_admin())) with check ((select private.is_admin()));
 
-drop policy if exists "public can view active barbers" on public.barbers;
-create policy "public can view active barbers"
-on public.barbers
-as permissive
-for select
-to public
-using (active = true);
+-- blocked_times: same admin/barber-own-rows shape as appointments
+create policy "blocked_times_admin_select" on public.blocked_times for select to authenticated using ((select private.is_admin()));
+create policy "blocked_times_admin_insert" on public.blocked_times for insert to authenticated with check ((select private.is_admin()));
+create policy "blocked_times_admin_update" on public.blocked_times for update to authenticated using ((select private.is_admin())) with check ((select private.is_admin()));
+create policy "blocked_times_barber_select" on public.blocked_times for select to authenticated using ((select private.is_barber()) and barber_id = (select private.current_barber_id()));
+create policy "blocked_times_barber_insert" on public.blocked_times for insert to authenticated with check ((select private.is_barber()) and barber_id = (select private.current_barber_id()));
+create policy "blocked_times_barber_update" on public.blocked_times for update to authenticated using ((select private.is_barber()) and barber_id = (select private.current_barber_id())) with check ((select private.is_barber()) and barber_id = (select private.current_barber_id()));
 
-drop policy if exists "public can view blocked times" on public.blocked_times;
-create policy "public can view blocked times"
-on public.blocked_times
-as permissive
-for select
-to public
-using (true);
+-- business_hours: public read of active rows; staff read all; admin writes
+create policy "business_hours_public_select_active" on public.business_hours for select to public using (active = true);
+create policy "business_hours_staff_select_all" on public.business_hours for select to authenticated using ((select private.is_admin()) or (select private.is_barber()));
+create policy "business_hours_admin_insert" on public.business_hours for insert to authenticated with check ((select private.is_admin()));
+create policy "business_hours_admin_update" on public.business_hours for update to authenticated using ((select private.is_admin())) with check ((select private.is_admin()));
 
-drop policy if exists "public can view business hours" on public.business_hours;
-create policy "public can view business hours"
-on public.business_hours
-as permissive
-for select
-to public
-using (true);
+-- customers: admin full access; barber sees/edits only customers they can
+-- access via can_access_customer(); barber UPDATE was widened 2026-09-06 to
+-- fix a bug where a barber could not correct a client's name the first time
+-- they served a client previously booked only with another barber.
+create policy "customers_admin_select" on public.customers for select to authenticated using ((select private.is_admin()));
+create policy "customers_admin_insert" on public.customers for insert to authenticated with check ((select private.is_admin()));
+create policy "customers_admin_update" on public.customers for update to authenticated using ((select private.is_admin())) with check ((select private.is_admin()));
+create policy "customers_barber_select" on public.customers for select to authenticated using ((select private.is_barber()) and (select private.can_access_customer(customers.id)));
+create policy "customers_barber_insert" on public.customers for insert to authenticated with check ((select private.is_barber()));
+create policy "customers_barber_update" on public.customers for update to authenticated using ((select private.is_barber())) with check ((select private.is_barber()));
 
-drop policy if exists "public can create customers" on public.customers;
-create policy "public can create customers"
-on public.customers
-as permissive
-for insert
-to public
-with check (true);
+-- services: public read of active services (booking form); staff read all; admin writes
+create policy "services_public_select_active" on public.services for select to public using (active = true);
+create policy "services_staff_select_all" on public.services for select to authenticated using ((select private.is_admin()) or (select private.is_barber()));
+create policy "services_admin_insert" on public.services for insert to authenticated with check ((select private.is_admin()));
+create policy "services_admin_update" on public.services for update to authenticated using ((select private.is_admin())) with check ((select private.is_admin()));
 
-drop policy if exists "public customers access phase1" on public.customers;
-create policy "public customers access phase1"
-on public.customers
-as permissive
-for all
-to public
-using (true)
-with check (true);
+-- staff_profiles: a user can read their own row (needed by the login
+-- middleware); only admins can list/create/update staff accounts.
+create policy "staff_profiles_self_select" on public.staff_profiles for select to authenticated using (user_id = (select auth.uid()));
+create policy "staff_profiles_admin_select" on public.staff_profiles for select to authenticated using ((select private.is_admin()));
+create policy "staff_profiles_admin_insert" on public.staff_profiles for insert to authenticated with check ((select private.is_admin()));
+create policy "staff_profiles_admin_update" on public.staff_profiles for update to authenticated using ((select private.is_admin())) with check ((select private.is_admin()));
 
-drop policy if exists "public can view active services" on public.services;
-create policy "public can view active services"
-on public.services
-as permissive
-for select
-to public
-using (active = true);
-
-drop policy if exists "public services access" on public.services;
-create policy "public services access"
-on public.services
-as permissive
-for all
-to public
-using (true)
-with check (true);
-
-drop policy if exists "public transactions access" on public.transactions;
-create policy "public transactions access"
-on public.transactions
-as permissive
-for all
-to public
-using (true)
-with check (true);
+-- transactions: admin only (direct table access); inserts for completed
+-- appointments and historical regularizations go through the SECURITY
+-- DEFINER RPCs below instead of direct inserts by barbers.
+create policy "transactions_admin_select" on public.transactions for select to authenticated using ((select private.is_admin()));
+create policy "transactions_admin_insert" on public.transactions for insert to authenticated with check ((select private.is_admin()));
+create policy "transactions_admin_update" on public.transactions for update to authenticated using ((select private.is_admin())) with check ((select private.is_admin()));
 
 -- ============================================================================
--- AUDIT SUMMARY
+-- RPC FUNCTIONS (SECURITY DEFINER) · atomic, role-checked business actions
+-- ============================================================================
+
+-- public.complete_appointment_with_payment(p_appointment_id, p_payment_method)
+--   Locks the appointment (FOR UPDATE), validates role/ownership/status,
+--   inserts the matching "Ingreso" transaction linked via appointment_id,
+--   and marks the appointment completed — all in one transaction.
+--
+-- public.link_historical_income_to_appointment(p_appointment_id, p_amount, p_payment_method)
+--   Admin-only. Lets an admin regularize a completed appointment that has
+--   no linked income yet (e.g. historical data migrated before this system).
+--
+-- Both are defined with `set search_path = ''` and fully-qualified table
+-- names, which is the recommended safe pattern for SECURITY DEFINER
+-- functions in Postgres/Supabase.
+
+-- ============================================================================
+-- AUDIT SUMMARY (2026-09-06)
 -- ============================================================================
 -- Canonical objects:
---   tables: appointments, barbers, blocked_times, business_hours,
---           customers, services, transactions
---   view:   customer_profiles
---   enum:   appointment_status
+--   tables: appointments, barbers, blocked_times, business_hours, customers,
+--           services, staff_profiles, transactions
+--   view:   customer_profiles (security_invoker)
+--   enums:  appointment_status, staff_role
+--   rpcs:   complete_appointment_with_payment, link_historical_income_to_appointment
 --
--- Legacy object intentionally excluded:
---   public.clients
+-- Legacy objects excluded from the app (present in DB, not referenced by code):
+--   public.clients, public.clients_backup_2a9
 --
--- Production audit findings:
---   * No frontend references to public.clients remain.
---   * No functional DB dependencies on public.clients were found.
---   * All legacy client phones were already represented in customers.
---   * appointments.customer_id had no NULL or orphan references.
---   * customer_profiles is the active customer read model.
+-- Findings from this audit:
+--   * RLS is role-based (admin/barber via staff_profiles), not the old
+--     "public using (true)" model from Fase 2A.8 — that model is gone.
+--   * customer_profiles correctly enforces RLS (security_invoker=true).
+--   * Fixed: customers UPDATE policy for barbers was too narrow; widened
+--     2026-09-06 (see policy comment above).
 -- ============================================================================
