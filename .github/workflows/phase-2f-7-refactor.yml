@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Refactor current page.tsx imports
+      - name: Normalize extracted page helpers
         shell: bash
         run: |
           python3 <<'PY'
@@ -25,29 +25,25 @@ jobs:
 
           path = Path("app/page.tsx")
           text = path.read_text()
-
-          if 'from "@/components/barber-g13/types"' not in text:
-              marker = 'import { getAuthContext, signOut, type AuthContext } from "@/lib/auth";'
-              if marker not in text:
-                  raise SystemExit("auth import marker not found; aborting")
-              imports = marker + '\n' + 'import type { Appointment, AppointmentStatus, Barber, Client, DbAppointmentStatus, HistoricalAppointment, PaymentMethod, Service, Transaction, TransactionType } from "@/components/barber-g13/types";' + '\n' + 'import { dateKey, dbToUiStatus, formatRegisteredDate, formatTransactionDate, normalizePhone, uiToDbStatus } from "@/components/barber-g13/utils";'
-              text = text.replace(marker, imports, 1)
-
-          start = text.find('type AppointmentStatus =')
-          end = text.find('const Icon =', start)
-          if start == -1 or end == -1:
-              raise SystemExit(f"could not locate extraction boundaries: start={start}, end={end}")
-
-          text = text[:start] + text[end:]
+          duplicate = '''const dbToUiStatus=(s:string):AppointmentStatus=>({pending:"Pendiente",confirmed:"Confirmada",completed:"Finalizada",cancelled:"Cancelada",no_show:"Cancelada"}[s] as AppointmentStatus)||"Pendiente";
+          const uiToDbStatus=(s:AppointmentStatus):DbAppointmentStatus=>({"Pendiente":"pending","Confirmada":"confirmed","En proceso":"confirmed","Finalizada":"completed","Cancelada":"cancelled"}[s] as DbAppointmentStatus);
+          const dateKey=(d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+          const normalizePhone=(value:string)=>{const digits=value.replace(/\\D/g,"");return /^57\\d{10}$/.test(digits)?digits.slice(2):digits;};
+          const formatRegisteredDate=(value:string)=>!value?"":new Date(value).toLocaleDateString("es-CO",{day:"2-digit",month:"short",year:"numeric"});
+          const formatTransactionDate=(value:string)=>{if(!value)return "";const [y,m,d]=value.split("-").map(Number);return new Date(y,m-1,d).toLocaleDateString("es-CO",{day:"2-digit",month:"short",year:"numeric"});};
+          '''
+          if duplicate not in text:
+              raise SystemExit("duplicate helper block not found; aborting")
+          text = text.replace(duplicate, "", 1)
           path.write_text(text)
-          print("Extracted types and shared utilities from the current app/page.tsx")
+          print("Removed duplicated helpers; page now uses extracted utilities")
           PY
-      - name: Commit refactor
+      - name: Commit normalization
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/page.tsx
           git diff --cached --quiet && { echo "No changes to commit"; exit 0; }
-          git commit -m "refactor(frontend): extract Barber G13 types and utilities"
+          git commit -m "refactor(frontend): use extracted Barber G13 utilities"
           git push
