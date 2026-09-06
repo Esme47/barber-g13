@@ -39,12 +39,25 @@ export type SaveTransactionInput = {
   time: string;
 };
 
+function assertValidPaymentMethod(paymentMethod: PaymentMethod) {
+  if (!["Efectivo", "Nequi", "Transferencia", "Tarjeta"].includes(paymentMethod)) {
+    throw new Error("Método de pago no válido.");
+  }
+}
+
 export async function createAppointment(authContext: AuthContext, input: CreateAppointmentInput) {
   const effectiveBarberId = authContext.role === "barber" ? authContext.barberId : input.barberId;
   const normalizedPhone = normalizePhone(input.phone);
+  const duration = Number(input.serviceDuration);
 
   if (!input.name.trim() || !normalizedPhone || !input.serviceId || !effectiveBarberId) {
     throw new Error("Completa cliente, teléfono, servicio y barbero.");
+  }
+  if (!Number.isFinite(duration) || duration <= 0) {
+    throw new Error("La duración del servicio no es válida.");
+  }
+  if (!/^\d{2}:\d{2}$/.test(input.time)) {
+    throw new Error("La hora de la cita no es válida.");
   }
 
   const { data: existing, error: findError } = await supabase
@@ -75,7 +88,8 @@ export async function createAppointment(authContext: AuthContext, input: CreateA
 
   const day = dateKey(input.selectedDate);
   const startsAt = new Date(`${day}T${input.time}:00`);
-  const endsAt = new Date(startsAt.getTime() + input.serviceDuration * 60000);
+  if (Number.isNaN(startsAt.getTime())) throw new Error("La fecha u hora de la cita no es válida.");
+  const endsAt = new Date(startsAt.getTime() + duration * 60000);
 
   const { error } = await supabase.from("appointments").insert({
     customer_id: customerId,
@@ -97,16 +111,14 @@ export async function saveClient(input: SaveClientInput) {
 
   if (!name || !phone) throw new Error("Nombre y teléfono son obligatorios.");
 
-  if (input.id) {
-    const { data: duplicate, error: duplicateError } = await supabase
-      .from("customers")
-      .select("id")
-      .eq("phone", phone)
-      .neq("id", input.id)
-      .maybeSingle();
-    if (duplicateError) throw duplicateError;
-    if (duplicate) throw new Error("Ya existe otro cliente con ese teléfono.");
+  const duplicateQuery = supabase.from("customers").select("id").eq("phone", phone);
+  const { data: duplicate, error: duplicateError } = input.id
+    ? await duplicateQuery.neq("id", input.id).maybeSingle()
+    : await duplicateQuery.maybeSingle();
+  if (duplicateError) throw duplicateError;
+  if (duplicate) throw new Error("Ya existe otro cliente con ese teléfono.");
 
+  if (input.id) {
     const { error } = await supabase
       .from("customers")
       .update({ full_name: name, phone, email })
@@ -122,15 +134,17 @@ export async function saveClient(input: SaveClientInput) {
 export async function saveService(input: SaveServiceInput) {
   const name = input.name.trim();
   const description = input.description.trim();
+  const duration = Number(input.duration);
+  const price = Number(input.price);
 
-  if (!name || !input.duration || input.price < 0) {
-    throw new Error("Completa nombre, duración y precio.");
+  if (!name || !Number.isFinite(duration) || duration <= 0 || !Number.isFinite(price) || price < 0) {
+    throw new Error("Completa nombre, duración y precio válidos.");
   }
 
   if (input.id) {
     const { error } = await supabase
       .from("services")
-      .update({ name, description, duration_minutes: input.duration, price: input.price })
+      .update({ name, description, duration_minutes: duration, price })
       .eq("id", input.id);
     if (error) throw error;
     return;
@@ -139,27 +153,37 @@ export async function saveService(input: SaveServiceInput) {
   const { error } = await supabase.from("services").insert({
     name,
     description,
-    duration_minutes: input.duration,
-    price: input.price,
+    duration_minutes: duration,
+    price,
     active: true,
   });
   if (error) throw error;
 }
 
 export async function toggleService(id: string, active: boolean) {
-  const { error } = await supabase.from("services").update({ active: !active }).eq("id", id);
+  if (!id) throw new Error("Servicio no válido.");
+  const { error } = await supabase
+    .from("services")
+    .update({ active: !active, updated_at: new Date().toISOString() })
+    .eq("id", id);
   if (error) throw error;
 }
 
 export async function saveTransaction(input: SaveTransactionInput) {
-  if (!input.concept.trim() || !input.category.trim() || !input.amount || input.amount < 0) {
-    throw new Error("Completa concepto, categoría y monto.");
+  const amount = Number(input.amount);
+  if (!input.concept.trim() || !input.category.trim() || !Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Completa concepto, categoría y un monto mayor que cero.");
   }
+  if (!input.date || !input.time || !/^\d{2}:\d{2}$/.test(input.time)) {
+    throw new Error("Fecha y hora son obligatorias y deben ser válidas.");
+  }
+  if (!["Ingreso", "Gasto"].includes(input.type)) throw new Error("Tipo de movimiento no válido.");
+  assertValidPaymentMethod(input.paymentMethod);
 
   const { error } = await supabase.from("transactions").insert({
     concept: input.concept.trim(),
     category: input.category.trim(),
-    amount: input.amount,
+    amount,
     type: input.type,
     payment_method: input.paymentMethod,
     transaction_date: input.date,
@@ -170,7 +194,10 @@ export async function saveTransaction(input: SaveTransactionInput) {
 
 export async function updateAppointmentStatus(appointmentId: string, status: AppointmentStatus) {
   const dbStatus = uiToDbStatus(status);
-  if (!dbStatus) throw new Error("Estado de cita no válido.");
+  if (!appointmentId || !dbStatus) throw new Error("Estado de cita no válido.");
+  if (status === "Finalizada") {
+    throw new Error("Las citas finalizadas deben completarse junto con el registro del pago.");
+  }
 
   const { error } = await supabase
     .from("appointments")
@@ -180,6 +207,8 @@ export async function updateAppointmentStatus(appointmentId: string, status: App
 }
 
 export async function completeAppointmentWithPayment(appointmentId: string, paymentMethod: PaymentMethod) {
+  if (!appointmentId) throw new Error("Cita no válida.");
+  assertValidPaymentMethod(paymentMethod);
   const { error } = await supabase.rpc("complete_appointment_with_payment", {
     p_appointment_id: appointmentId,
     p_payment_method: paymentMethod,
@@ -192,8 +221,10 @@ export async function linkHistoricalIncomeToAppointment(
   amount: number,
   paymentMethod: PaymentMethod,
 ) {
-  if (!amount || amount <= 0) throw new Error("Ingresa un monto válido.");
-
+  if (!appointmentId || !Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Ingresa un monto válido.");
+  }
+  assertValidPaymentMethod(paymentMethod);
   const { error } = await supabase.rpc("link_historical_income_to_appointment", {
     p_appointment_id: appointmentId,
     p_amount: amount,
