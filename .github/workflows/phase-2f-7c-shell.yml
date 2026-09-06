@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   extract-shell:
-    if: github.event.head_commit.message != 'refactor(frontend): extract Barber G13 shell UI'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +29,7 @@ jobs:
           header_start = text.index('<header className="topbar">')
           header_end = text.index('</header>', header_start) + len('</header>')
           header = text[header_start:header_end]
-          sidebar_body = aside.replace('menuOpen', 'open').replace('setMenuOpen', 'onClose').replace('setActive', 'onNavigate').replace('staffName', 'staffName').replace('staffRole', 'staffRole').replace('signOut', 'onLogout').replace('router.replace("/login")', 'onLogout()')
+          sidebar_body = aside.replace('menuOpen', 'open').replace('setMenuOpen', 'onClose').replace('setActive', 'onNavigate').replace('signOut', 'onLogout').replace('router.replace("/login")', 'onLogout()')
           sidebar_body = sidebar_body.replace('onClick={async()=>{await onLogout();onLogout()}}', 'onClick={onLogout}')
           sidebar_body = sidebar_body.replace('onClick={()=>setMenuOpen(false)}', 'onClick={onClose}')
           sidebar_body = sidebar_body.replace('onClick={()=>setActive(item.name);setMenuOpen(false)}', 'onClick={()=>{onNavigate(item.name);onClose();}}')
