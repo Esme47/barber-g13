@@ -22,14 +22,14 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
-          import re
 
           path = Path("app/page.tsx")
           text = path.read_text()
-          pattern = re.compile(r'const dbToUiStatus=.*?const formatTransactionDate=.*?;\\n', re.S)
-          text, count = pattern.subn('', text, count=1)
-          if count != 1:
-              raise SystemExit(f"expected one duplicated helper block, found {count}")
+          start = text.find("const dbToUiStatus=")
+          end = text.find("\n\nexport default function Home", start)
+          if start == -1 or end == -1:
+              raise SystemExit(f"could not locate duplicate helper boundaries: start={start}, end={end}")
+          text = text[:start] + text[end+2:]
           path.write_text(text)
           print("Removed duplicated helpers; page now uses extracted utilities")
           PY
