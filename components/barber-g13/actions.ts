@@ -65,31 +65,20 @@ export async function createAppointment(authContext: AuthContext, input: CreateA
     throw new Error("La hora de la cita no es válida.");
   }
 
-  const { data: existing, error: findError } = await supabase
-    .from("customers")
-    .select("id")
-    .eq("phone", normalizedPhone)
-    .maybeSingle();
-
-  if (findError) throw findError;
-
-  let customerId: string;
-  if (existing) {
-    customerId = existing.id;
-    const { error } = await supabase
-      .from("customers")
-      .update({ full_name: input.name.trim() })
-      .eq("id", customerId);
-    if (error) throw error;
-  } else {
-    const { data: newCustomer, error } = await supabase
-      .from("customers")
-      .insert({ full_name: input.name.trim(), phone: normalizedPhone })
-      .select("id")
-      .single();
-    if (error) throw error;
-    customerId = newCustomer.id;
-  }
+  // Finds the customer by phone or creates them, atomically and without
+  // depending on the caller's row-level visibility. A barber can only SELECT
+  // customers they've already served (private.can_access_customer), so a
+  // direct table lookup here would silently miss an existing customer who
+  // has only ever been served by a different barber, and the code would try
+  // to insert a duplicate phone number and fail. This RPC runs with elevated
+  // privileges (like complete_appointment_with_payment) and does the
+  // find-or-create server-side instead.
+  const { data: customerId, error: customerError } = await supabase.rpc("book_customer_for_appointment", {
+    p_phone: normalizedPhone,
+    p_full_name: input.name.trim(),
+  });
+  if (customerError) throw customerError;
+  if (!customerId) throw new Error("No fue posible identificar al cliente.");
 
   const day = dateKey(input.selectedDate);
   const startsAt = new Date(`${day}T${input.time}:00`);
@@ -97,7 +86,7 @@ export async function createAppointment(authContext: AuthContext, input: CreateA
   const endsAt = new Date(startsAt.getTime() + duration * 60000);
 
   const { error } = await supabase.from("appointments").insert({
-    customer_id: customerId,
+    customer_id: customerId as string,
     barber_id: effectiveBarberId,
     service_id: input.serviceId,
     starts_at: startsAt.toISOString(),
