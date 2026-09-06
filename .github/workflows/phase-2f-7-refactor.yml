@@ -1,0 +1,50 @@
+name: phase-2f-7-refactor
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/phase-2f-7-refactor.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refactor current page.tsx imports
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path("app/page.tsx")
+          text = path.read_text()
+
+          marker = 'import { getAuthContext, signOut, type AuthContext } from "@/lib/auth";'
+          imports = '''import { getAuthContext, signOut, type AuthContext } from "@/lib/auth";\nimport type { Appointment, AppointmentStatus, Barber, Client, DbAppointmentStatus, HistoricalAppointment, PaymentMethod, Service, Transaction, TransactionType } from "@/components/barber-g13/types";\nimport { dateKey, dbToUiStatus, formatRegisteredDate, formatTransactionDate, normalizePhone, uiToDbStatus } from "@/components/barber-g13/utils";'''
+          if 'from "@/components/barber-g13/types"' not in text:
+              if marker not in text:
+                  raise SystemExit("auth import marker not found; aborting")
+              text = text.replace(marker, imports, 1)
+
+          pattern = re.compile(r'type AppointmentStatus = .*?const formatTransactionDate=.*?;\n\n(?=const Icon =)', re.S)
+          new_text, count = pattern.subn('', text, count=1)
+          if count != 1:
+              raise SystemExit(f"expected exactly one type/helper block, found {count}")
+
+          path.write_text(new_text)
+      - name: Commit refactor
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx
+          git diff --cached --quiet && { echo "No changes to commit"; exit 0; }
+          git commit -m "refactor(frontend): extract Barber G13 types and utilities"
+          git push
