@@ -14,6 +14,15 @@ export type CreateAppointmentInput = {
   serviceDuration: number;
 };
 
+export type RescheduleAppointmentInput = {
+  appointmentId: string;
+  serviceId: string;
+  barberId: string;
+  time: string;
+  selectedDate: Date;
+  serviceDuration: number;
+};
+
 export type SaveClientInput = {
   id?: string;
   name: string;
@@ -129,6 +138,54 @@ export async function createAppointment(authContext: AuthContext, input: CreateA
     // A trigger blocks booking into a time the barber has manually blocked
     // (lunch, personal appointment, day off) — see the
     // wire_blocked_times_agenda migration.
+    if (isRaisedMessage(error, "APPOINTMENT_CONFLICTS_WITH_BLOCKED_TIME")) {
+      throw new Error(
+        "Ese horario está bloqueado por el barbero (por ejemplo, almuerzo o ausencia). Elige otro horario."
+      );
+    }
+    throw error;
+  }
+}
+
+// Agenda 2.0: edits an existing appointment's service, barber (admin only —
+// the appointments RLS update policy pins a barber's own barber_id, so a
+// barber can never reassign a citа to someone else) and/or time, reusing the
+// same overlap/blocked-time protections as creating a new one. Does not
+// touch the customer or the appointment's status.
+export async function rescheduleAppointment(authContext: AuthContext, input: RescheduleAppointmentInput) {
+  const effectiveBarberId = authContext.role === "barber" ? authContext.barberId : input.barberId;
+  const duration = Number(input.serviceDuration);
+
+  if (!input.appointmentId) throw new Error("Cita no válida.");
+  if (!input.serviceId || !effectiveBarberId) throw new Error("Completa servicio y barbero.");
+  if (!Number.isFinite(duration) || duration <= 0) {
+    throw new Error("La duración del servicio no es válida.");
+  }
+  if (!/^\d{2}:\d{2}$/.test(input.time)) {
+    throw new Error("La hora de la cita no es válida.");
+  }
+
+  const day = dateKey(input.selectedDate);
+  const startsAt = new Date(`${day}T${input.time}:00`);
+  if (Number.isNaN(startsAt.getTime())) throw new Error("La fecha u hora de la cita no es válida.");
+  const endsAt = new Date(startsAt.getTime() + duration * 60000);
+
+  const { error } = await supabase
+    .from("appointments")
+    .update({
+      barber_id: effectiveBarberId,
+      service_id: input.serviceId,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+    })
+    .eq("id", input.appointmentId);
+
+  if (error) {
+    if (error.code === PG_EXCLUSION_VIOLATION) {
+      throw new Error(
+        "Ese horario ya no está disponible: se cruza con otra cita de este barbero. Elige otra hora."
+      );
+    }
     if (isRaisedMessage(error, "APPOINTMENT_CONFLICTS_WITH_BLOCKED_TIME")) {
       throw new Error(
         "Ese horario está bloqueado por el barbero (por ejemplo, almuerzo o ausencia). Elige otro horario."
