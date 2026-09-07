@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { AuthContext } from "@/lib/auth";
-import type { Appointment, Barber, BlockedTime, BusinessHours, Client, HistoricalAppointment, Service, Transaction } from "./types";
+import type { Appointment, Barber, BlockedTime, BusinessHours, Client, ClientAppointmentHistoryEntry, HistoricalAppointment, Service, Transaction } from "./types";
 import { dateKey, dbToUiStatus, formatRegisteredDate } from "./utils";
 
 type CustomerProfileRow = {
@@ -10,6 +10,8 @@ type CustomerProfileRow = {
   email: string | null;
   created_at: string;
   visits: number | null;
+  completed_visits: number | null;
+  total_spent: number | string | null;
   last_service: string | null;
   last_visit: string | null;
   next_appointment: string | null;
@@ -87,7 +89,47 @@ type BlockedTimeRow = {
   barbers: BarberReference;
 };
 
+type ClientHistoryRow = {
+  id: string;
+  starts_at: string;
+  status: string;
+  services: ServiceReference;
+  barbers: BarberReference;
+};
+
 const firstReference = <T,>(value: T | T[] | null): T | null => Array.isArray(value) ? value[0] ?? null : value;
+
+// Fase 7 (CRM de clientes): historial completo de citas de un cliente
+// específico (cualquier estado), para el perfil detallado. Se carga bajo
+// demanda (al abrir el perfil), no junto con la lista general de clientes,
+// para no traer todas las citas de todos los clientes de una sola vez.
+// RLS de `appointments` sigue aplicando: un barbero solo verá aquí las citas
+// de ese cliente que él mismo atendió, un admin las ve todas.
+export async function loadClientAppointmentHistory(customerId: string): Promise<ClientAppointmentHistoryEntry[]> {
+  if (!customerId) return [];
+  const { data, error } = await supabase
+    .from("appointments")
+    .select(`id, starts_at, status, services(name,price), barbers(name)`)
+    .eq("customer_id", customerId)
+    .order("starts_at", { ascending: false })
+    .limit(50);
+  if (error) throw error;
+  return (data || []).map((value) => {
+    const row = value as unknown as ClientHistoryRow;
+    const starts = new Date(row.starts_at);
+    const service = firstReference(row.services);
+    const barber = firstReference(row.barbers);
+    return {
+      id: row.id,
+      date: dateKey(starts),
+      time: starts.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false }),
+      service: service?.name || "Servicio",
+      barber: barber?.name || "Barbero",
+      price: Number(service?.price || 0),
+      status: dbToUiStatus(row.status),
+    };
+  });
+}
 
 export async function loadBarberG13Data(
   authContext: AuthContext,
@@ -106,7 +148,7 @@ export async function loadBarberG13Data(
   const dayStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
   const nextDayStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + 1, 0, 0, 0, 0);
   const day = dateKey(selectedDate);
-  const clientsQuery = supabase.from("customer_profiles").select("id,full_name,phone,email,created_at,visits,last_service,last_visit,next_appointment").order("created_at", { ascending: false });
+  const clientsQuery = supabase.from("customer_profiles").select("id,full_name,phone,email,created_at,visits,completed_visits,total_spent,last_service,last_visit,next_appointment").order("created_at", { ascending: false });
   const historicalQuery = isAdmin ? supabase.from("appointments").select(`id, starts_at, status, customer_id, service_id, barber_id, customers(full_name), services(name,price), barbers(name)`).eq("status", "completed").order("starts_at", { ascending: false }) : null;
   const servicesQuery = supabase.from("services").select("*").order("created_at", { ascending: true });
   const barbersQuery = supabase.from("barbers").select("*").eq("active", true).order("name");
@@ -135,7 +177,7 @@ export async function loadBarberG13Data(
 
   const clients = (clientsRes.data || []).map((c) => {
     const row = c as unknown as CustomerProfileRow;
-    return { id: row.id, name: row.full_name || "", phone: row.phone || "", email: row.email || "", visits: Number(row.visits || 0), lastService: row.last_service || "Sin servicios registrados", lastVisit: row.last_visit || null, nextAppointment: row.next_appointment || null, registeredAt: formatRegisteredDate(row.created_at), createdAt: row.created_at };
+    return { id: row.id, name: row.full_name || "", phone: row.phone || "", email: row.email || "", visits: Number(row.visits || 0), completedVisits: Number(row.completed_visits || 0), totalSpent: Number(row.total_spent || 0), lastService: row.last_service || "Sin servicios registrados", lastVisit: row.last_visit || null, nextAppointment: row.next_appointment || null, registeredAt: formatRegisteredDate(row.created_at), createdAt: row.created_at };
   });
 
   const services = (servicesRes.data || []).map((s) => {
