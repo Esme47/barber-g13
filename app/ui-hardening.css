@@ -216,6 +216,113 @@ button:disabled {
   .barber-filter { width: 100%; }
 }
 
+/* Agenda 2.0 (blocked_times): header actions row — "Bloquear horario" sits
+   next to "Nueva reserva" instead of replacing it. */
+.agenda-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.agenda-heading-actions .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Agenda 2.0: an empty hour slot offers two side-by-side actions — book it,
+   or block it (lunch, personal appointment, day off). */
+.slot-actions {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+}
+
+.slot-actions .available-slot {
+  flex: 1;
+}
+
+.block-slot-button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px dashed #4a3a20;
+  background: transparent;
+  color: #8a7550;
+  border-radius: 9px;
+  padding: 12px 14px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.block-slot-button:hover {
+  color: var(--gold);
+  border-color: #5a4928;
+  background: #171512;
+}
+
+/* Agenda 2.0: hour slot covered by a manual block that started earlier but
+   is still running (spillover) — same treatment as slot-occupied, with a
+   distinct (reddish) tone so a manual block reads differently from a busy
+   appointment at a glance. */
+.slot-blocked {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px dashed #4a2020;
+  background: #140f0f;
+  color: #a06a6a;
+  border-radius: 9px;
+  padding: 12px;
+  font-size: 11px;
+}
+
+/* Agenda 2.0: a manual block shown inline in the timeline, alongside any
+   appointment cards for the same hour. */
+.blocked-card {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  border: 1px dashed #4a2020;
+  border-radius: 10px;
+  background: #140f0f;
+}
+
+.blocked-card > div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.blocked-card strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #c98a8a;
+}
+
+.blocked-card span {
+  color: #85858b;
+  font-size: 10px;
+}
+
+@media (max-width: 720px) {
+  .agenda-heading-actions { width: 100%; }
+  .agenda-heading-actions .primary-button,
+  .agenda-heading-actions .secondary-button { flex: 1; justify-content: center; }
+  .slot-actions { flex-direction: column; }
+  .blocked-card { flex-direction: column; align-items: stretch; }
+}
+
 .appointment-card {
   width: 100%;
   min-width: 0;
