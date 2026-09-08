@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuthContext, signOut, type AuthContext } from "@/lib/auth";
 import type { Appointment, AppointmentStatus, Barber, BlockedTime, BusinessHours, Client, ClientAppointmentHistoryEntry, HistoricalAppointment, PaymentMethod, Service, Transaction, TransactionType } from "@/components/barber-g13/types";
 import { dateKey, durationBucket, formatRegisteredDate, formatTransactionDate, generateHourSlots, normalizePhone, timeToMinutes } from "@/components/barber-g13/utils";
 import { Icon, getInitials, formatCurrency, formatDate } from "@/components/barber-g13/ui";
 import { Sidebar, Topbar } from "@/components/barber-g13/layout";
-import { loadBarberG13Data, loadClientAppointmentHistory } from "@/components/barber-g13/data";
+import { loadBarberG13Data, loadClientAppointmentHistory, loadDayData } from "@/components/barber-g13/data";
 import { createAppointment, rescheduleAppointment, saveClient, saveService, saveTransaction, toggleService as toggleServiceAction, updateAppointmentStatus, completeAppointmentWithPayment, linkHistoricalIncomeToAppointment, createBlockedTime, deleteBlockedTime } from "@/components/barber-g13/actions";
 
 const EDITABLE_STATUSES: AppointmentStatus[] = ["Pendiente", "Confirmada", "En proceso"];
@@ -29,7 +29,18 @@ export default function Home(){
  useEffect(()=>{let mounted=true;(async()=>{setAuthLoading(true);const context=await getAuthContext();if(!mounted)return;if(!context){router.replace("/login");setAuthContext(null);}else setAuthContext(context);setAuthLoading(false);})();return()=>{mounted=false;};},[router]);
  useEffect(()=>{if(!isAdmin&&["Servicios","Finanzas"].includes(active))setActive("Dashboard");},[isAdmin,active]);
  const loadData=useCallback(async()=>{if(!authContext)return;setLoading(true);setError("");try{const data=await loadBarberG13Data(authContext,selectedDate);setClients(data.clients);setServices(data.services);setTransactions(data.transactions);setHistoricalAppointments(data.historicalAppointments);setBarbers(data.barbers);setAppointments(data.appointments);setBusinessHours(data.businessHours);setBlockedTimes(data.blockedTimes);}catch(err:unknown){console.error("Error cargando Supabase:",err);setError(err instanceof Error?err.message:"No fue posible cargar los datos desde Supabase.");}finally{setLoading(false);}},[authContext,selectedDate]);
- useEffect(()=>{if(authContext)loadData();},[authContext,loadData]);
+ // Fase 11 (rendimiento): navegar por días en la Agenda (flechas o "Hoy")
+ // solo necesita recargar las citas/bloqueos de ESE día — no todo el
+ // historial financiero ni la lista completa de clientes/servicios/citas
+ // completadas, que no cambian por moverse de fecha. Antes, cada cambio de
+ // día disparaba loadData() completo (todas las transacciones y todas las
+ // citas completadas desde siempre, sin límite). loadData() se sigue usando
+ // para la carga inicial de sesión y después de cualquier acción que pueda
+ // afectar datos globales (crear cliente, registrar pago, etc.).
+ const loadDay=useCallback(async()=>{if(!authContext)return;setLoading(true);setError("");try{const data=await loadDayData(authContext,selectedDate);setAppointments(data.appointments);setBlockedTimes(data.blockedTimes);}catch(err:unknown){console.error("Error cargando la agenda del día:",err);setError(err instanceof Error?err.message:"No fue posible cargar la agenda de este día.");}finally{setLoading(false);}},[authContext,selectedDate]);
+ const didLoadOnceRef=useRef(false);
+ useEffect(()=>{if(authContext){didLoadOnceRef.current=true;loadData();}},[authContext]);
+ useEffect(()=>{if(!authContext)return;if(!didLoadOnceRef.current)return;loadDay();},[selectedDate]);
  const financialSummary=useMemo(()=>{const sales=transactions.filter(t=>t.type==="Ingreso").reduce((a,t)=>a+t.amount,0),expenses=transactions.filter(t=>t.type==="Gasto").reduce((a,t)=>a+t.amount,0);return{sales,expenses,profit:sales-expenses,servicesCompleted:transactions.filter(t=>t.type==="Ingreso").length};},[transactions]);
  const financialPeriods=useMemo(()=>{const now=new Date(),today=dateKey(now),weekStart=new Date(now);weekStart.setHours(0,0,0,0);const day=weekStart.getDay()||7;weekStart.setDate(weekStart.getDate()-day+1);const weekStartKey=dateKey(weekStart),monthKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;const build=(items:Transaction[])=>{const income=items.filter(t=>t.type==="Ingreso").reduce((a,t)=>a+t.amount,0),expense=items.filter(t=>t.type==="Gasto").reduce((a,t)=>a+t.amount,0);return{income,expense,profit:income-expense};};return{today:build(transactions.filter(t=>t.date===today)),week:build(transactions.filter(t=>t.date>=weekStartKey&&t.date<=today)),month:build(transactions.filter(t=>t.date.startsWith(monthKey))),total:build(transactions)};},[transactions]);
  const financialInsights=useMemo(()=>{const incomeTransactions=transactions.filter(t=>t.type==="Ingreso"),income=financialSummary.sales,margin=income>0?(financialSummary.profit/income)*100:0,average=incomeTransactions.length?income/incomeTransactions.length:0;return{margin,average,movements:transactions.length};},[transactions,financialSummary]);
