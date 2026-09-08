@@ -55,7 +55,15 @@ export default function Home(){
  // Servicio más vendido y método de pago más usado: se calculan solo para
  // admin, ya que dependen de historicalAppointments/transactions, que ya
  // están restringidos por RLS a admin (Finanzas es admin-only).
- const topService=useMemo(()=>{const counts=new Map<string,number>();historicalAppointments.forEach(a=>counts.set(a.service,(counts.get(a.service)||0)+1));let best:{name:string;count:number}|null=null;counts.forEach((count,name)=>{if(!best||count>best.count)best={name,count};});return best;},[historicalAppointments]);
+ // Nota de build: se usa Record + Object.entries en vez de Map + let
+ // reasignado, porque ese patrón (con un Map<string,number> y un `let best`
+ // reasignado dentro de counts.forEach) hacía que TypeScript infiriera el
+ // tipo de retorno del useMemo como `null` únicamente, y luego
+ // `topService && <...>{topService.name}` fallaba en build con "Property
+ // 'name' does not exist on type 'never'" (topService quedaba con tipo
+ // `never` dentro de la rama truthy). El genérico explícito en useMemo<> más
+ // este patrón evitan la ambigüedad de inferencia.
+ const topService=useMemo<{name:string;count:number}|null>(()=>{const counts:Record<string,number>={};historicalAppointments.forEach(a=>{counts[a.service]=(counts[a.service]||0)+1;});const entries=Object.entries(counts);if(entries.length===0)return null;const [name,count]=entries.reduce((best,entry)=>entry[1]>best[1]?entry:best);return{name,count};},[historicalAppointments]);
  const topPaymentMethod=useMemo(()=>{const withAmount=paymentSummary.filter(p=>p.amount>0);if(withAmount.length===0)return null;return withAmount.reduce((a,b)=>b.amount>a.amount?b:a);},[paymentSummary]);
  // Ingresos de los últimos 7 días (incluyendo hoy), para el mini gráfico de
  // barras del Dashboard — construido con CSS/divs simples, sin librería de
