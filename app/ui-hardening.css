@@ -53,6 +53,14 @@
   min-width: 0;
 }
 
+/* Fase 8 (Dashboard profesional): stats-grid can now hold up to ~9 cards for
+   an admin (base stats + finalizadas/canceladas/nuevos/recurrentes/ventas
+   del mes) — auto-fit keeps them evenly sized instead of the fixed
+   4-column grid from globals.css stranding a lone card on the last row. */
+.stats-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
 /* Fase 7 (CRM de clientes): module-stats now shows a variable number of
    mini-stats (3 for a barber, 5 for an admin) — auto-fit keeps them evenly
    sized instead of a fixed 3-column grid leaving a lonely 4th/5th card. */
@@ -171,6 +179,92 @@ button:disabled {
 .appointment-info span {
   color: #777;
   font-size: 10px;
+}
+
+/* Fase 8 (Dashboard profesional): horizontal breakdown of today's
+   appointments by status (Pendiente/Confirmada/En proceso/Finalizada/
+   Cancelada), each row's bar width proportional to its share of the day. */
+.status-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.status-bar-row {
+  display: grid;
+  grid-template-columns: 84px 1fr 26px;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-bar-row > span {
+  color: #999;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-bar-row > strong {
+  text-align: right;
+  font-size: 12px;
+}
+
+.status-bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #232327;
+  overflow: hidden;
+}
+
+.status-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  min-width: 3px;
+}
+
+.status-bar-fill.status-pendiente { background: #d9b765; }
+.status-bar-fill.status-confirmada { background: var(--gold); }
+.status-bar-fill.status-en-proceso { background: var(--blue); }
+.status-bar-fill.status-finalizada { background: var(--green); }
+.status-bar-fill.status-cancelada { background: var(--red); }
+
+/* Fase 8: mini bar chart of the last 7 days of income, built with plain
+   divs (no chart library), matching the project's existing "chart" pattern
+   in globals.css but sized for a sidebar panel. */
+.mini-bar-chart {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px;
+  height: 120px;
+  margin: 4px 0 18px;
+  padding: 0 2px;
+}
+
+.bar-column {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.bar-column .bar {
+  width: 100%;
+  max-width: 22px;
+  min-height: 4px;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(to top, #9d7836, var(--gold-light));
+}
+
+.bar-column span {
+  color: #777;
+  font-size: 9px;
+  text-transform: capitalize;
 }
 
 .timeline-header {
@@ -622,6 +716,7 @@ button:disabled {
   .module-heading .primary-button, .module-heading .search-box, .module-heading > * { max-width: 100%; }
   .modal-backdrop, .modal-overlay { padding: 10px; align-items: flex-start; }
   .modal-backdrop .modal, .modal { width: 100%; max-height: calc(100vh - 20px); border-radius: 14px; }
+  .status-bar-row { grid-template-columns: 72px 1fr 24px; }
 }
 
 @media (max-width: 480px) {
