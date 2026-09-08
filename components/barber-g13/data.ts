@@ -99,6 +99,24 @@ type ClientHistoryRow = {
 
 const firstReference = <T,>(value: T | T[] | null): T | null => Array.isArray(value) ? value[0] ?? null : value;
 
+const mapAppointmentRow = (value: unknown, day: string): Appointment => {
+  const a = value as AppointmentRow;
+  const starts = new Date(a.starts_at);
+  const ends = new Date(a.ends_at);
+  const customer = firstReference(a.customers);
+  const service = firstReference(a.services);
+  const barber = firstReference(a.barbers);
+  return { id: a.id, time: starts.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false }), date: day, name: customer?.full_name || "Cliente", phone: customer?.phone || "", service: service?.name || "Servicio", serviceId: a.service_id, barber: barber?.name || "Barbero", barberId: a.barber_id, customerId: a.customer_id, duration: Math.max(15, Math.round((ends.getTime() - starts.getTime()) / 60000)), status: dbToUiStatus(a.status), notes: a.notes || "" };
+};
+
+const mapBlockedTimeRow = (value: unknown, day: string): BlockedTime => {
+  const b = value as BlockedTimeRow;
+  const starts = new Date(b.starts_at);
+  const ends = new Date(b.ends_at);
+  const barber = firstReference(b.barbers);
+  return { id: b.id, time: starts.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false }), date: day, barberId: b.barber_id, barber: barber?.name || "Barbero", duration: Math.max(5, Math.round((ends.getTime() - starts.getTime()) / 60000)), reason: b.reason || "Bloqueado" };
+};
+
 // Fase 7 (CRM de clientes): historial completo de citas de un cliente
 // específico (cualquier estado), para el perfil detallado. Se carga bajo
 // demanda (al abrir el perfil), no junto con la lista general de clientes,
@@ -131,42 +149,63 @@ export async function loadClientAppointmentHistory(customerId: string): Promise<
   });
 }
 
-export async function loadBarberG13Data(
+// Fase 11 (rendimiento): datos acotados al día seleccionado en la Agenda
+// (citas + bloqueos manuales). Antes, cambiar de día en la Agenda disparaba
+// una recarga completa (clientes, servicios, TODO el historial de
+// transacciones y TODAS las citas completadas desde siempre), aunque solo
+// hacía falta lo del día. Ahora navegar por días solo llama a esta función.
+export async function loadDayData(
   authContext: AuthContext,
   selectedDate: Date,
-): Promise<{
-  clients: Client[];
-  services: Service[];
-  barbers: Barber[];
-  appointments: Appointment[];
-  transactions: Transaction[];
-  historicalAppointments: HistoricalAppointment[];
-  businessHours: BusinessHours[];
-  blockedTimes: BlockedTime[];
-}> {
-  const isAdmin = authContext.role === "admin";
+): Promise<{ appointments: Appointment[]; blockedTimes: BlockedTime[] }> {
+  void authContext;
   const dayStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
   const nextDayStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + 1, 0, 0, 0, 0);
   const day = dateKey(selectedDate);
-  const clientsQuery = supabase.from("customer_profiles").select("id,full_name,phone,email,created_at,visits,completed_visits,total_spent,last_service,last_visit,next_appointment").order("created_at", { ascending: false });
-  const historicalQuery = isAdmin ? supabase.from("appointments").select(`id, starts_at, status, customer_id, service_id, barber_id, customers(full_name), services(name,price), barbers(name)`).eq("status", "completed").order("starts_at", { ascending: false }) : null;
-  const servicesQuery = supabase.from("services").select("*").order("created_at", { ascending: true });
-  const barbersQuery = supabase.from("barbers").select("*").eq("active", true).order("name");
+
   const appointmentsQuery = supabase.from("appointments").select(`id, starts_at, ends_at, status, notes, customer_id, barber_id, service_id, customers(full_name,phone), services(name,duration_minutes), barbers(name)`).gte("starts_at", dayStart.toISOString()).lt("starts_at", nextDayStart.toISOString()).order("starts_at", { ascending: true });
-  const transactionsQuery = isAdmin ? supabase.from("transactions").select("*").order("transaction_date", { ascending: false }).order("transaction_time", { ascending: false }).order("id", { ascending: false }) : null;
-  const businessHoursQuery = supabase.from("business_hours").select("weekday,opens_at,closes_at,active").order("weekday", { ascending: true });
   // blocked_times: RLS already scopes this per role (admin sees every
   // barber's blocks, a barber only sees their own), so no extra filtering is
   // needed here beyond the selected day's window, same as appointments.
   const blockedTimesQuery = supabase.from("blocked_times").select(`id, starts_at, ends_at, reason, barber_id, barbers(name)`).gte("starts_at", dayStart.toISOString()).lt("starts_at", nextDayStart.toISOString()).order("starts_at", { ascending: true });
-  const [clientsRes, historicalRes, servicesRes, barbersRes, appointmentsRes, businessHoursRes, blockedTimesRes] = await Promise.all([clientsQuery, historicalQuery || Promise.resolve({ data: [], error: null }), servicesQuery, barbersQuery, appointmentsQuery, businessHoursQuery, blockedTimesQuery]);
+
+  const [appointmentsRes, blockedTimesRes] = await Promise.all([appointmentsQuery, blockedTimesQuery]);
+  if (appointmentsRes.error) throw appointmentsRes.error;
+  if (blockedTimesRes.error) throw blockedTimesRes.error;
+
+  const appointments = (appointmentsRes.data || []).map((value) => mapAppointmentRow(value, day));
+  const blockedTimes = (blockedTimesRes.data || []).map((value) => mapBlockedTimeRow(value, day));
+  return { appointments, blockedTimes };
+}
+
+// Fase 11 (rendimiento): datos que NO dependen del día seleccionado —
+// clientes, servicios, barberos, horario del negocio, historial financiero
+// completo. Se cargan una sola vez por sesión (al iniciar sesión o después
+// de una acción que los modifique), no cada vez que se navega la Agenda.
+export async function loadGlobalData(
+  authContext: AuthContext,
+): Promise<{
+  clients: Client[];
+  services: Service[];
+  barbers: Barber[];
+  transactions: Transaction[];
+  historicalAppointments: HistoricalAppointment[];
+  businessHours: BusinessHours[];
+}> {
+  const isAdmin = authContext.role === "admin";
+  const clientsQuery = supabase.from("customer_profiles").select("id,full_name,phone,email,created_at,visits,completed_visits,total_spent,last_service,last_visit,next_appointment").order("created_at", { ascending: false });
+  const historicalQuery = isAdmin ? supabase.from("appointments").select(`id, starts_at, status, customer_id, service_id, barber_id, customers(full_name), services(name,price), barbers(name)`).eq("status", "completed").order("starts_at", { ascending: false }) : null;
+  const servicesQuery = supabase.from("services").select("*").order("created_at", { ascending: true });
+  const barbersQuery = supabase.from("barbers").select("*").eq("active", true).order("name");
+  const transactionsQuery = isAdmin ? supabase.from("transactions").select("*").order("transaction_date", { ascending: false }).order("transaction_time", { ascending: false }).order("id", { ascending: false }) : null;
+  const businessHoursQuery = supabase.from("business_hours").select("weekday,opens_at,closes_at,active").order("weekday", { ascending: true });
+
+  const [clientsRes, historicalRes, servicesRes, barbersRes, businessHoursRes] = await Promise.all([clientsQuery, historicalQuery || Promise.resolve({ data: [], error: null }), servicesQuery, barbersQuery, businessHoursQuery]);
   if (clientsRes.error) throw clientsRes.error;
   if (historicalRes.error) throw historicalRes.error;
   if (servicesRes.error) throw servicesRes.error;
   if (barbersRes.error) throw barbersRes.error;
-  if (appointmentsRes.error) throw appointmentsRes.error;
   if (businessHoursRes.error) throw businessHoursRes.error;
-  if (blockedTimesRes.error) throw blockedTimesRes.error;
 
   let transactionsData: TransactionRow[] = [];
   if (transactionsQuery) {
@@ -206,23 +245,26 @@ export async function loadBarberG13Data(
     return { weekday: Number(row.weekday), opensAt: row.opens_at, closesAt: row.closes_at, active: Boolean(row.active) };
   });
 
-  const appointments = (appointmentsRes.data || []).map((value) => {
-    const a = value as unknown as AppointmentRow;
-    const starts = new Date(a.starts_at);
-    const ends = new Date(a.ends_at);
-    const customer = firstReference(a.customers);
-    const service = firstReference(a.services);
-    const barber = firstReference(a.barbers);
-    return { id: a.id, time: starts.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false }), date: day, name: customer?.full_name || "Cliente", phone: customer?.phone || "", service: service?.name || "Servicio", serviceId: a.service_id, barber: barber?.name || "Barbero", barberId: a.barber_id, customerId: a.customer_id, duration: Math.max(15, Math.round((ends.getTime() - starts.getTime()) / 60000)), status: dbToUiStatus(a.status), notes: a.notes || "" };
-  });
+  return { clients, services, barbers, transactions, historicalAppointments, businessHours };
+}
 
-  const blockedTimes = (blockedTimesRes.data || []).map((value) => {
-    const b = value as unknown as BlockedTimeRow;
-    const starts = new Date(b.starts_at);
-    const ends = new Date(b.ends_at);
-    const barber = firstReference(b.barbers);
-    return { id: b.id, time: starts.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false }), date: day, barberId: b.barber_id, barber: barber?.name || "Barbero", duration: Math.max(5, Math.round((ends.getTime() - starts.getTime()) / 60000)), reason: b.reason || "Bloqueado" };
-  });
-
-  return { clients, services, barbers, appointments, transactions, historicalAppointments, businessHours, blockedTimes };
+// Kept for compatibility: fetches both the global data and the selected
+// day's data together. Used for the very first load after login (and by
+// mutation handlers, which may affect either set) — day-only navigation
+// should call loadDayData directly instead (see Fase 11 note above).
+export async function loadBarberG13Data(
+  authContext: AuthContext,
+  selectedDate: Date,
+): Promise<{
+  clients: Client[];
+  services: Service[];
+  barbers: Barber[];
+  appointments: Appointment[];
+  transactions: Transaction[];
+  historicalAppointments: HistoricalAppointment[];
+  businessHours: BusinessHours[];
+  blockedTimes: BlockedTime[];
+}> {
+  const [global, day] = await Promise.all([loadGlobalData(authContext), loadDayData(authContext, selectedDate)]);
+  return { ...global, ...day };
 }
