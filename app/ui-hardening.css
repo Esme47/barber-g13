@@ -53,9 +53,12 @@
   min-width: 0;
 }
 
+/* Fase 7 (CRM de clientes): module-stats now shows a variable number of
+   mini-stats (3 for a barber, 5 for an admin) — auto-fit keeps them evenly
+   sized instead of a fixed 3-column grid leaving a lonely 4th/5th card. */
 .module-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
 }
 
@@ -71,6 +74,36 @@
 .service-card > *,
 .client-card > * {
   min-width: 0;
+}
+
+/* Fase 7 (CRM de clientes): the whole client card opens the detailed
+   profile, with just the edit icon carved out (stopPropagation in page.tsx)
+   — the pointer cursor and hover are the only affordance telling the user
+   the card itself is clickable. */
+.client-card {
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.client-card:hover {
+  border-color: #4a3a20;
+  background: #1c1a16;
+}
+
+/* Fase 7: small marker next to a client's name in the list when they haven't
+   visited in a while (see CLIENT_INACTIVE_DAYS in page.tsx). */
+.inactive-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #2a1f14;
+  color: #c98a4a;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
 }
 
 button,
@@ -370,6 +403,91 @@ button:disabled {
 .appointment-card.finalizada { border-left-color: var(--green); }
 .appointment-card.cancelada { border-left-color: var(--red); opacity: 0.75; }
 
+/* Fase 7 (CRM de clientes): stat grid inside the client profile modal —
+   reuses the mini-stat visual language via a lighter local grid. */
+.client-profile-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 14px;
+  background: #111114;
+  border: 1px solid #2e2e32;
+  border-radius: 10px;
+}
+
+.client-profile-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.client-profile-summary span {
+  color: #888;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.client-profile-summary strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.client-history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid #2e2e32;
+  border-radius: 9px;
+  background: #18181b;
+}
+
+.history-row > div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.history-row strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.history-row span {
+  color: #85858b;
+  font-size: 10px;
+}
+
+.history-right {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.history-right strong {
+  font-size: 11px;
+}
+
+@media (max-width: 480px) {
+  .history-row { flex-direction: column; align-items: stretch; }
+  .history-right { flex-direction: row; justify-content: space-between; align-items: center; }
+}
+
 /* page.tsx renders modal-backdrop; globals.css styles modal-overlay. */
 .modal-backdrop {
   position: fixed;
@@ -470,7 +588,6 @@ button:disabled {
 @media (max-width: 900px) {
   .stats-grid, .agenda-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .module-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .welcome h1, .agenda-heading h1, .placeholder-page h1 { font-size: 40px; }
   .appointment-card { align-items: flex-start; }
   .appointment-card-right { flex-direction: column; align-items: flex-end; }
@@ -490,7 +607,8 @@ button:disabled {
   .welcome, .agenda-heading, .agenda-toolbar { flex-direction: column; }
   .welcome h1, .agenda-heading h1, .placeholder-page h1 { font-size: 34px; letter-spacing: -1px; }
   .primary-button { width: 100%; justify-content: center; }
-  .stats-grid, .agenda-summary, .quick-grid, .module-stats, .agenda-sidebar { grid-template-columns: 1fr; }
+  .stats-grid, .agenda-summary, .quick-grid, .agenda-sidebar { grid-template-columns: 1fr; }
+  .module-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stat-card, .panel { padding: 18px; }
   .appointment, .appointment-row { grid-template-columns: 50px minmax(0, 1fr); gap: 9px; }
   .appointment-row .status { grid-column: 2; justify-self: start; }
@@ -514,4 +632,5 @@ button:disabled {
   .appointment-row { grid-template-columns: 44px minmax(0, 1fr); }
   .appointment-card-right { flex-wrap: wrap; }
   .client-details span { white-space: normal; }
+  .module-stats { grid-template-columns: 1fr; }
 }
